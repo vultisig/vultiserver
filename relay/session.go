@@ -14,14 +14,18 @@ import (
 	"github.com/vultisig/mobile-tss-lib/tss"
 
 	"github.com/vultisig/vultisigner/common"
+	"github.com/vultisig/vultisigner/config"
 )
 
 type Client struct {
-	relayServer string
-	client      http.Client
-	logger      *logrus.Logger
+	relayServer         string
+	verificationServer  string
+	useVerificationServer bool
+	client              http.Client
+	logger              *logrus.Logger
 }
 
+// NewRelayClient creates a new relay client using just the relay server URL
 func NewRelayClient(relayServer string) *Client {
 	return &Client{
 		relayServer: relayServer,
@@ -31,6 +35,38 @@ func NewRelayClient(relayServer string) *Client {
 		logger: logrus.WithField("service", "relay-client").Logger,
 	}
 }
+
+// NewRelayClientFromConfig creates a new relay client with both relay and verification server URLs
+func NewRelayClientFromConfig(cfg config.Config) *Client {
+	return &Client{
+		relayServer:         cfg.Relay.Server,
+		verificationServer:  cfg.VerificationServer.URL,
+		useVerificationServer: false,
+		client: http.Client{
+			Timeout: 5 * time.Second,
+		},
+		logger: logrus.WithField("service", "relay-client").Logger,
+	}
+}
+
+// UseVerificationServer tells the client to use the verification server for subsequent operations
+func (c *Client) UseVerificationServer() {
+	c.useVerificationServer = true
+}
+
+// UseRelayServer tells the client to use the relay server for subsequent operations
+func (c *Client) UseRelayServer() {
+	c.useVerificationServer = false
+}
+
+// GetServerURL returns the appropriate server URL based on the current context
+func (c *Client) GetServerURL() string {
+	if c.useVerificationServer && c.verificationServer != "" {
+		return c.verificationServer
+	}
+	return c.relayServer
+}
+
 func (c *Client) bodyCloser(body io.ReadCloser) {
 	if body != nil {
 		if err := body.Close(); err != nil {
@@ -40,7 +76,7 @@ func (c *Client) bodyCloser(body io.ReadCloser) {
 }
 
 func (c *Client) StartSession(sessionID string, parties []string) error {
-	sessionURL := c.relayServer + "/start/" + sessionID
+	sessionURL := c.GetServerURL() + "/start/" + sessionID
 	body, err := json.Marshal(parties)
 	if err != nil {
 		return fmt.Errorf("fail to start session: %w", err)
@@ -79,7 +115,7 @@ func (c *Client) RegisterSessionWithRetry(sessionID string, key string) error {
 	return fmt.Errorf("fail to register session after 3 retries")
 }
 func (c *Client) RegisterSession(sessionID string, key string) error {
-	sessionURL := c.relayServer + "/" + sessionID
+	sessionURL := c.GetServerURL() + "/" + sessionID
 	body := []byte("[\"" + key + "\"]")
 	c.logger.WithFields(logrus.Fields{
 		"session": sessionID,
@@ -100,7 +136,7 @@ func (c *Client) RegisterSession(sessionID string, key string) error {
 }
 
 func (c *Client) WaitForSessionStart(ctx context.Context, sessionID string) ([]string, error) {
-	sessionURL := c.relayServer + "/start/" + sessionID
+	sessionURL := c.GetServerURL() + "/start/" + sessionID
 	for {
 		select {
 		case <-ctx.Done():
@@ -142,7 +178,7 @@ func (c *Client) WaitForSessionStart(ctx context.Context, sessionID string) ([]s
 }
 
 func (c *Client) GetSession(sessionID string) ([]string, error) {
-	sessionURL := c.relayServer + "/" + sessionID
+	sessionURL := c.GetServerURL() + "/" + sessionID
 
 	resp, err := c.client.Get(sessionURL)
 	if err != nil {
@@ -161,7 +197,7 @@ func (c *Client) GetSession(sessionID string) ([]string, error) {
 }
 
 func (c *Client) CompleteSession(sessionID, localPartyID string) error {
-	sessionURL := c.relayServer + "/complete/" + sessionID
+	sessionURL := c.GetServerURL() + "/complete/" + sessionID
 	parties := []string{localPartyID}
 	body, err := json.Marshal(parties)
 	if err != nil {
@@ -185,7 +221,7 @@ func (c *Client) CompleteSession(sessionID, localPartyID string) error {
 }
 
 func (c *Client) CheckCompletedParties(sessionID string, partiesJoined []string) (bool, error) {
-	sessionURL := c.relayServer + "/complete/" + sessionID
+	sessionURL := c.GetServerURL() + "/complete/" + sessionID
 	start := time.Now()
 	timeout := time.Minute
 
@@ -236,7 +272,7 @@ func (c *Client) CheckCompletedParties(sessionID string, partiesJoined []string)
 }
 
 func (c *Client) MarkKeysignComplete(sessionID string, messageID string, sig tss.KeysignResponse) error {
-	sessionURL := c.relayServer + "/complete/" + sessionID + "/keysign"
+	sessionURL := c.GetServerURL() + "/complete/" + sessionID + "/keysign"
 	body, err := json.Marshal(sig)
 	if err != nil {
 		return fmt.Errorf("fail to marshal keysign to json: %w", err)
@@ -258,7 +294,7 @@ func (c *Client) MarkKeysignComplete(sessionID string, messageID string, sig tss
 	return nil
 }
 func (c *Client) CheckKeysignComplete(sessionID string, messageID string) (*tss.KeysignResponse, error) {
-	sessionURL := c.relayServer + "/complete/" + sessionID + "/keysign"
+	sessionURL := c.GetServerURL() + "/complete/" + sessionID + "/keysign"
 	req, err := http.NewRequest(http.MethodGet, sessionURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create request: %w", err)
@@ -280,7 +316,7 @@ func (c *Client) CheckKeysignComplete(sessionID string, messageID string) (*tss.
 	return &sig, nil
 }
 func (c *Client) EndSession(sessionID string) error {
-	sessionURL := c.relayServer + "/" + sessionID
+	sessionURL := c.GetServerURL() + "/" + sessionID
 	req, err := http.NewRequest(http.MethodDelete, sessionURL, nil)
 	if err != nil {
 		return fmt.Errorf("fail to end session: %w", err)
@@ -296,7 +332,7 @@ func (c *Client) EndSession(sessionID string) error {
 	return nil
 }
 func (c *Client) UploadSetupMessage(sessionID string, payload string) error {
-	sessionUrl := c.relayServer + "/setup-message/" + sessionID
+	sessionUrl := c.GetServerURL() + "/setup-message/" + sessionID
 	body := []byte(payload)
 	bodyReader := bytes.NewReader(body)
 	resp, err := http.Post(sessionUrl, "application/json", bodyReader)
@@ -326,7 +362,7 @@ func (c *Client) WaitForSetupMessage(ctx context.Context, sessionID, messageID s
 }
 
 func (c *Client) GetSetupMessage(sessionID, messageID string) (string, error) {
-	sessionUrl := c.relayServer + "/setup-message/" + sessionID
+	sessionUrl := c.GetServerURL() + "/setup-message/" + sessionID
 	req, err := http.NewRequest(http.MethodGet, sessionUrl, nil)
 	if err != nil {
 		return "", fmt.Errorf("fail to get setup message: %w", err)
@@ -362,7 +398,7 @@ func (c *Client) GetSetupMessage(sessionID, messageID string) (string, error) {
 }
 
 func (c *Client) DeleteMessageFromServer(sessionID, localPartyID, hash, messageID string) error {
-	req, err := http.NewRequest(http.MethodDelete, c.relayServer+"/message/"+sessionID+"/"+localPartyID+"/"+hash, nil)
+	req, err := http.NewRequest(http.MethodDelete, c.GetServerURL()+"/message/"+sessionID+"/"+localPartyID+"/"+hash, nil)
 	if err != nil {
 		return fmt.Errorf("fail to delete message: %w", err)
 	}
@@ -380,7 +416,7 @@ func (c *Client) DeleteMessageFromServer(sessionID, localPartyID, hash, messageI
 }
 
 func (c *Client) DownloadMessages(sessionID string, localPartyID string, messageID string) ([]Message, error) {
-	req, err := http.NewRequest(http.MethodGet, c.relayServer+"/message/"+sessionID+"/"+localPartyID, nil)
+	req, err := http.NewRequest(http.MethodGet, c.GetServerURL()+"/message/"+sessionID+"/"+localPartyID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create request: %w", err)
 	}

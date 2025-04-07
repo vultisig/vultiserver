@@ -12,6 +12,9 @@ import (
 )
 
 func main() {
+	// Load all configuration at startup.
+	// The VS_CONFIG_NAME environment variable controls which config file is loaded.
+	// This config is used throughout the application and should not be reloaded at runtime.
 	cfg, err := config.GetConfigure()
 	if err != nil {
 		panic(err)

@@ -16,10 +16,13 @@ import (
 	"sync"
 
 	"github.com/sirupsen/logrus"
+	"github.com/vultisig/vultisigner/config"
 )
 
 type MessengerImp struct {
 	Server           string
+	VerificationServer string
+	useVerificationServer bool
 	SessionID        string
 	HexEncryptionKey string
 	logger           *logrus.Logger
@@ -40,6 +43,40 @@ func NewMessenger(server, sessionID, hexEncryptionKey string, isGCM bool, messag
 		counter:          0,
 	}
 }
+
+// NewMessengerFromConfig creates a messenger with both relay and verification servers configured
+func NewMessengerFromConfig(cfg config.Config, sessionID, hexEncryptionKey string, isGCM bool, messageID string) *MessengerImp {
+	return &MessengerImp{
+		Server:              cfg.Relay.Server,
+		VerificationServer:  cfg.VerificationServer.URL,
+		useVerificationServer: false,
+		SessionID:           sessionID,
+		HexEncryptionKey:    hexEncryptionKey,
+		messageCache:        sync.Map{},
+		logger:              logrus.WithField("service", "messenger").Logger,
+		isGCM:               isGCM,
+		counter:             0,
+	}
+}
+
+// UseVerificationServer tells the messenger to use the verification server for subsequent operations
+func (m *MessengerImp) UseVerificationServer() {
+	m.useVerificationServer = true
+}
+
+// UseRelayServer tells the messenger to use the relay server for subsequent operations
+func (m *MessengerImp) UseRelayServer() {
+	m.useVerificationServer = false
+}
+
+// GetServerURL returns the appropriate server URL based on the current context
+func (m *MessengerImp) GetServerURL() string {
+	if m.useVerificationServer && m.VerificationServer != "" {
+		return m.VerificationServer
+	}
+	return m.Server
+}
+
 func (m *MessengerImp) Send(from, to, body string) error {
 	if m.HexEncryptionKey != "" {
 		encryptedBody, err := encryptWrapper(body, m.HexEncryptionKey, m.isGCM)
@@ -77,7 +114,7 @@ func (m *MessengerImp) Send(from, to, body string) error {
 	}
 	m.counter++
 
-	url := fmt.Sprintf("%s/message/%s", m.Server, m.SessionID)
+	url := fmt.Sprintf("%s/message/%s", m.GetServerURL(), m.SessionID)
 	req, err := http.NewRequest("POST", url, bytes.NewReader(buf))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -113,6 +150,7 @@ func (m *MessengerImp) Send(from, to, body string) error {
 
 	return nil
 }
+
 func encryptWrapper(plainText, hexKey string, isGCM bool) (string, error) {
 	if isGCM {
 		return encryptGCM(plainText, hexKey)

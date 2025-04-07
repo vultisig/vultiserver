@@ -51,8 +51,8 @@ func (t *DKLSTssService) GetMPCKeygenWrapper(isEdDSA bool) *MPCWrapperImp {
 }
 
 func (t *DKLSTssService) ProceeDKLSKeygen(req types.VaultCreateRequest) (string, string, error) {
-	serverURL := t.cfg.Relay.Server
-	relayClient := relay.NewRelayClient(serverURL)
+	// Create a relay client from config which has both relay and verification URLs
+	relayClient := relay.NewRelayClientFromConfig(t.cfg)
 
 	// Let's register session here
 	if err := relayClient.RegisterSession(req.SessionID, req.LocalPartyId); err != nil {
@@ -144,7 +144,7 @@ func (t *DKLSTssService) keygen(sessionID string,
 		"attempt":          attempt,
 	}).Info("Keygen")
 	t.isKeygenFinished.Store(false)
-	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
+	relayClient := relay.NewRelayClientFromConfig(t.cfg)
 	mpcKeygenWrapper := t.GetMPCKeygenWrapper(isEdDSA)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -187,7 +187,7 @@ func (t *DKLSTssService) processKeygenOutbound(handle Handle,
 	isEdDSA bool,
 	wg *sync.WaitGroup) error {
 	defer wg.Done()
-	messenger := relay.NewMessenger(t.cfg.Relay.Server, sessionID, hexEncryptionKey, true, "")
+	messenger := relay.NewMessengerFromConfig(t.cfg, sessionID, hexEncryptionKey, true, "")
 	mpcKeygenWrapper := t.GetMPCKeygenWrapper(isEdDSA)
 	for {
 		outbound, err := mpcKeygenWrapper.KeygenSessionOutputMessage(handle)
@@ -230,7 +230,7 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 	defer wg.Done()
 	var messageCache sync.Map
 	mpcKeygenWrapper := t.GetMPCKeygenWrapper(isEdDSA)
-	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
+	relayClient := relay.NewRelayClientFromConfig(t.cfg)
 	start := time.Now()
 	for {
 		select {

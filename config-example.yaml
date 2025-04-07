@@ -12,3 +12,6 @@ relay:
   server: "http://localhost:8080/router"
 email_server:
   api_key: "key-1234567890"
+
+verification_server:
+  url: "http://localhost:8081"

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/viper"
 )
@@ -36,10 +37,19 @@ type Config struct {
 		SecretKey string `mapstructure:"secret" json:"secret"`
 		Bucket    string `mapstructure:"bucket" json:"bucket"`
 	} `mapstructure:"block_storage" json:"block_storage"`
+
+	VerificationServer struct {
+		URL string `mapstructure:"url" json:"url"`
+	} `mapstructure:"verification_server" json:"verification_server,omitempty"`
 }
 
 func GetConfigure() (*Config, error) {
-	viper.SetConfigName("config")
+	configName := os.Getenv("VS_CONFIG_NAME")
+	if configName == "" {
+		configName = "config"
+	}
+	
+	viper.SetConfigName(configName)
 	viper.AddConfigPath(".")
 	viper.AutomaticEnv()
 
@@ -52,6 +62,7 @@ func GetConfigure() (*Config, error) {
 	viper.SetDefault("Redis.Password", "")
 	viper.SetDefault("Redis.DB", 0)
 	viper.SetDefault("Relay.Server", "https://api.vultisig.com/router")
+	viper.SetDefault("VerificationServer.URL", "")
 
 	if err := viper.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("fail to reading config file, %w", err)
