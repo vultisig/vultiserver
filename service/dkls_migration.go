@@ -123,6 +123,7 @@ func (t *DKLSTssService) ProceeMigration(vault *vaultType.Vault,
 			"isCompleted": isCompleted,
 			"error":       err,
 		}).Error("Failed to check completed parties")
+		return fmt.Errorf("failed to check completed parties: %w", err)
 	}
 	if t.backup == nil {
 		return nil

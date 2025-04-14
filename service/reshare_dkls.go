@@ -74,6 +74,7 @@ func (t *DKLSTssService) ProcessReshare(vault *vaultType.Vault,
 			"isCompleted": isCompleted,
 			"error":       err,
 		}).Error("Failed to check completed parties")
+		return fmt.Errorf("failed to check completed parties: %w", err)
 	}
 	if t.backup == nil {
 		t.logger.Infof("Backup is disabled")

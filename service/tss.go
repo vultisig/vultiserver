@@ -89,6 +89,7 @@ func (s *WorkerService) JoinKeyGeneration(req types.VaultCreateRequest) (string,
 			"isCompleted": isCompleted,
 			"error":       err,
 		}).Error("Failed to check completed parties")
+		return "", "", fmt.Errorf("failed to check completed parties: %w", err)
 	}
 
 	err = s.BackupVault(req, partiesJoined, ecdsaPubkey, eddsaPubkey, req.HexChainCode, localStateAccessor)
