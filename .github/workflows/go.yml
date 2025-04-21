@@ -15,10 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-      with:
-        lfs: 'true'
-    - name: Fetch Git LFS files
-      run: git lfs pull
 
     - name: Set up Go
       uses: actions/setup-go@v4
