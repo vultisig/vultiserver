@@ -3,8 +3,8 @@ package service
 import (
 	"fmt"
 
-	session "go-wrapper/go-dkls/sessions"
-	eddsaSession "go-wrapper/go-schnorr/sessions"
+	session "github.com/vultisig/go-wrappers/go-dkls/sessions"
+	eddsaSession "github.com/vultisig/go-wrappers/go-schnorr/sessions"
 )
 
 type Handle int32

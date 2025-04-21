@@ -24,6 +24,14 @@ jobs:
     - name: Install Clang
       run: sudo apt-get install -y clang
 
+    - name: Install dkls libraries
+      run: |
+        wget https://github.com/vultisig/go-wrappers/archive/refs/heads/master.tar.gz
+        tar -xzf master.tar.gz
+        cd go-wrappers-master
+        sudo mkdir -p /usr/local/lib/dkls
+        sudo cp --recursive includes /usr/local/lib/dkls
+        
     - name: Build
       run: go build -v ./...
       env:
@@ -31,7 +39,9 @@ jobs:
         CC: clang
 
     - name: Test
-      run: go test -v ./...
+      run: |
+        export LD_LIBRARY_PATH=/usr/local/lib/dkls/includes/linux/:$LD_LIBRARY_PATH
+        go test -v ./...
       env:
         CGO_ENABLED: 1
         CC: clang
