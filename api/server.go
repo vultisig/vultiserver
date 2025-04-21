@@ -21,10 +21,10 @@ import (
 	keygen "github.com/vultisig/commondata/go/vultisig/keygen/v1"
 	"github.com/vultisig/mobile-tss-lib/tss"
 
-	"github.com/vultisig/vultisigner/common"
-	"github.com/vultisig/vultisigner/internal/tasks"
-	"github.com/vultisig/vultisigner/internal/types"
-	"github.com/vultisig/vultisigner/storage"
+	"github.com/vultisig/vultiserver/common"
+	"github.com/vultisig/vultiserver/internal/tasks"
+	"github.com/vultisig/vultiserver/internal/types"
+	"github.com/vultisig/vultiserver/storage"
 )
 
 type Server struct {

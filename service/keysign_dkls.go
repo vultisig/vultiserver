@@ -18,9 +18,9 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/vultisig/mobile-tss-lib/tss"
 
-	"github.com/vultisig/vultisigner/common"
-	"github.com/vultisig/vultisigner/internal/types"
-	"github.com/vultisig/vultisigner/relay"
+	"github.com/vultisig/vultiserver/common"
+	"github.com/vultisig/vultiserver/internal/types"
+	"github.com/vultisig/vultiserver/relay"
 )
 
 func (t *DKLSTssService) ProcessDKLSKeysign(req types.KeysignRequest) (map[string]tss.KeysignResponse, error) {

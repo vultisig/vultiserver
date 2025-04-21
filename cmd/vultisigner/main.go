@@ -6,9 +6,9 @@ import (
 	"github.com/DataDog/datadog-go/statsd"
 	"github.com/hibiken/asynq"
 
-	"github.com/vultisig/vultisigner/api"
-	"github.com/vultisig/vultisigner/config"
-	"github.com/vultisig/vultisigner/storage"
+	"github.com/vultisig/vultiserver/api"
+	"github.com/vultisig/vultiserver/config"
+	"github.com/vultisig/vultiserver/storage"
 )
 
 func main() {

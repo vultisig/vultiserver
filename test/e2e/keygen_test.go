@@ -12,7 +12,7 @@ package keygen_test
 // 	"time"
 
 // 	"github.com/vultisig/mobile-tss-lib/coordinator"
-// 	"github.com/vultisig/vultisigner/relay"
+// 	"github.com/vultisig/vultiserver/relay"
 // )
 
 // type VaultCreateResponse struct {
