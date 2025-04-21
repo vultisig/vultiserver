@@ -7,10 +7,10 @@
 package thorchainswap
 
 import (
-	binance "github.com/vultisig/vultisigner/walletcore/protos/binance"
-	bitcoin "github.com/vultisig/vultisigner/walletcore/protos/bitcoin"
-	cosmos "github.com/vultisig/vultisigner/walletcore/protos/cosmos"
-	ethereum "github.com/vultisig/vultisigner/walletcore/protos/ethereum"
+	binance "github.com/vultisig/vultiserver/walletcore/protos/binance"
+	bitcoin "github.com/vultisig/vultiserver/walletcore/protos/bitcoin"
+	cosmos "github.com/vultisig/vultiserver/walletcore/protos/cosmos"
+	ethereum "github.com/vultisig/vultiserver/walletcore/protos/ethereum"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"

@@ -18,8 +18,8 @@ import (
 	"github.com/vultisig/mobile-tss-lib/tss"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/vultisig/vultisigner/internal/types"
-	"github.com/vultisig/vultisigner/relay"
+	"github.com/vultisig/vultiserver/internal/types"
+	"github.com/vultisig/vultiserver/relay"
 
 	vaultType "github.com/vultisig/commondata/go/vultisig/vault/v1"
 )

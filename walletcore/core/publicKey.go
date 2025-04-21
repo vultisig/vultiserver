@@ -3,7 +3,7 @@ package core
 // #include <TrustWalletCore/TWPublicKey.h>
 import "C"
 
-import "github.com/vultisig/vultisigner/walletcore/types"
+import "github.com/vultisig/vultiserver/walletcore/types"
 
 type PublicKeyType uint32
 

@@ -13,7 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/vultisig/mobile-tss-lib/tss"
 
-	"github.com/vultisig/vultisigner/common"
+	"github.com/vultisig/vultiserver/common"
 )
 
 type Client struct {

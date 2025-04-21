@@ -7,9 +7,9 @@
 package walletconnect
 
 import (
-	binance "github.com/vultisig/vultisigner/walletcore/protos/binance"
-	common "github.com/vultisig/vultisigner/walletcore/protos/common"
-	solana "github.com/vultisig/vultisigner/walletcore/protos/solana"
+	binance "github.com/vultisig/vultiserver/walletcore/protos/binance"
+	common "github.com/vultisig/vultiserver/walletcore/protos/common"
+	solana "github.com/vultisig/vultiserver/walletcore/protos/solana"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"

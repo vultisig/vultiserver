@@ -9,10 +9,10 @@ import (
 	v1 "github.com/vultisig/commondata/go/vultisig/keysign/v1"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/vultisig/vultisigner/walletcore/core"
-	"github.com/vultisig/vultisigner/walletcore/protos/common"
-	"github.com/vultisig/vultisigner/walletcore/protos/ethereum"
-	"github.com/vultisig/vultisigner/walletcore/protos/transactioncompiler"
+	"github.com/vultisig/vultiserver/walletcore/core"
+	"github.com/vultisig/vultiserver/walletcore/protos/common"
+	"github.com/vultisig/vultiserver/walletcore/protos/ethereum"
+	"github.com/vultisig/vultiserver/walletcore/protos/transactioncompiler"
 )
 
 var _ ChainHelper = &ERC20ChainHelper{}

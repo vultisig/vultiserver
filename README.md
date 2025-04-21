@@ -1,4 +1,4 @@
-![Build Status](https://github.com/vultisig/vultisigner/actions/workflows/go.yml/badge.svg?branch=main)
+![Build Status](https://github.com/vultisig/vultiserver/actions/workflows/go.yml/badge.svg?branch=main)
 # Vultisigner
 `Vultisigner`, also known as `VultiServer`, is a simple TSS server providing Keygen, Keysign, and Reshare services. Use cases for VultiServer include:
 

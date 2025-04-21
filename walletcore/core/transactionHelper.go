@@ -2,7 +2,7 @@ package core
 
 // #include <TrustWalletCore/TWTransactionCompiler.h>
 import "C"
-import "github.com/vultisig/vultisigner/walletcore/types"
+import "github.com/vultisig/vultiserver/walletcore/types"
 
 func PreImageHashes(c CoinType, txInputData []byte) []byte {
 	input := types.TWDataCreateWithGoBytes(txInputData)

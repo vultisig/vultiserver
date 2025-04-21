@@ -3,7 +3,7 @@ package core
 // #include <TrustWalletCore/TWAnyAddress.h>
 import "C"
 import (
-	"github.com/vultisig/vultisigner/walletcore/types"
+	"github.com/vultisig/vultiserver/walletcore/types"
 )
 
 func GetAnyAddressData(addr string, coinType CoinType) []byte {

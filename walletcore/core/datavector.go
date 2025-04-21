@@ -2,7 +2,7 @@ package core
 
 // #include <TrustWalletCore/TWDataVector.h>
 import "C"
-import "github.com/vultisig/vultisigner/walletcore/types"
+import "github.com/vultisig/vultiserver/walletcore/types"
 
 type TWDataVector *C.struct_TWDataVector
 

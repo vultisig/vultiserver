@@ -7,8 +7,8 @@
 package bitcoin
 
 import (
-	bitcoinv2 "github.com/vultisig/vultisigner/walletcore/protos/bitcoinv2"
-	common "github.com/vultisig/vultisigner/walletcore/protos/common"
+	bitcoinv2 "github.com/vultisig/vultiserver/walletcore/protos/bitcoinv2"
+	common "github.com/vultisig/vultiserver/walletcore/protos/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"

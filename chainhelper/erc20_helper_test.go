@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	v1 "github.com/vultisig/commondata/go/vultisig/keysign/v1"
 
-	"github.com/vultisig/vultisigner/walletcore/core"
+	"github.com/vultisig/vultiserver/walletcore/core"
 )
 
 func TestERC20Helper_GetPreSignedImageHash(t *testing.T) {

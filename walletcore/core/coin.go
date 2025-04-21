@@ -5,7 +5,7 @@ package core
 // #include <TrustWalletCore/TWBitcoinScript.h>
 import "C"
 
-import "github.com/vultisig/vultisigner/walletcore/types"
+import "github.com/vultisig/vultiserver/walletcore/types"
 
 type CoinType uint32
 

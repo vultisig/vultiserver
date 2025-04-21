@@ -11,7 +11,7 @@
 package nervos
 
 import (
-	common "github.com/vultisig/vultisigner/walletcore/protos/common"
+	common "github.com/vultisig/vultiserver/walletcore/protos/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"

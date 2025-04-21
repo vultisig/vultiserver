@@ -12,10 +12,10 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/vultisig/vultisigner/config"
-	"github.com/vultisig/vultisigner/internal/types"
-	"github.com/vultisig/vultisigner/relay"
-	"github.com/vultisig/vultisigner/storage"
+	"github.com/vultisig/vultiserver/config"
+	"github.com/vultisig/vultiserver/internal/types"
+	"github.com/vultisig/vultiserver/relay"
+	"github.com/vultisig/vultiserver/storage"
 )
 
 var TssKeyGenTimeout = errors.New("keygen timeout")

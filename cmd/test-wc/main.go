@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/vultisig/vultisigner/walletcore/core"
+	"github.com/vultisig/vultiserver/walletcore/core"
 )
 
 func main() {

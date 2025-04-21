@@ -5,7 +5,7 @@ package core
 import "C"
 
 import (
-	"github.com/vultisig/vultisigner/walletcore/types"
+	"github.com/vultisig/vultiserver/walletcore/types"
 
 	"google.golang.org/protobuf/proto"
 )

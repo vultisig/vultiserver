@@ -11,9 +11,9 @@
 package liquidstaking
 
 import (
-	aptos "github.com/vultisig/vultisigner/walletcore/protos/aptos"
-	cosmos "github.com/vultisig/vultisigner/walletcore/protos/cosmos"
-	ethereum "github.com/vultisig/vultisigner/walletcore/protos/ethereum"
+	aptos "github.com/vultisig/vultiserver/walletcore/protos/aptos"
+	cosmos "github.com/vultisig/vultiserver/walletcore/protos/cosmos"
+	ethereum "github.com/vultisig/vultiserver/walletcore/protos/ethereum"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
