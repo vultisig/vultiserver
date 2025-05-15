@@ -208,6 +208,9 @@ func (t *DKLSTssService) keysign(sessionID string,
 	sig, err := t.processKeysignInbound(sessionHandle, sessionID, hexEncryptionKey, localPartyID, isEdDSA, messageID, wg)
 	wg.Wait()
 	t.logger.Infoln("Keysign result is:", len(sig))
+	if len(sig) == 0 {
+		return nil, fmt.Errorf("signature is empty")
+	}
 	rBytes := sig[:32]
 	sBytes := sig[32:64]
 	derBytes, err := common.GetDerSignature(rBytes, sBytes)
