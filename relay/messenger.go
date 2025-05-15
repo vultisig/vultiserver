@@ -36,6 +36,7 @@ func NewMessenger(server, sessionID, hexEncryptionKey string, isGCM bool, messag
 		HexEncryptionKey: hexEncryptionKey,
 		messageCache:     sync.Map{},
 		logger:           logrus.WithField("service", "messenger").Logger,
+		messageID:        messageID,
 		isGCM:            isGCM,
 		counter:          0,
 	}
