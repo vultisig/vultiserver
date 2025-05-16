@@ -133,7 +133,7 @@ func (t *DKLSTssService) keysign(sessionID string,
 	if len(keysignCommittee) == 0 {
 		return nil, fmt.Errorf("keysign committee is empty")
 	}
-
+	t.isKeysignFinished.Store(false)
 	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
 	mpcWrapper := t.GetMPCKeygenWrapper(isEdDSA)
 	t.logger.WithFields(logrus.Fields{

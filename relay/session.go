@@ -340,7 +340,7 @@ func (c *Client) GetSetupMessage(sessionID, messageID string) (string, error) {
 			req.Header.Add("message_id", messageID)
 		}
 	}
-
+	c.logger.Infof("getting setup message, sessionID: %s,message_id: %s", sessionID, messageID)
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("fail to get setup message: %w", err)
