@@ -21,7 +21,7 @@ func (t *DKLSTssService) ProcessReshare(vault *vaultType.Vault,
 	sessionID string,
 	hexEncryptionKey string,
 	encryptionPassword string,
-	email string) error {
+	email string, noBackup bool) error {
 	if vault.Name == "" {
 		return fmt.Errorf("vault name is empty")
 	}
@@ -77,6 +77,10 @@ func (t *DKLSTssService) ProcessReshare(vault *vaultType.Vault,
 		return fmt.Errorf("failed to check completed parties: %w", err)
 	}
 	if t.backup == nil {
+		t.logger.Infof("Backup is disabled")
+		return nil
+	}
+	if noBackup {
 		t.logger.Infof("Backup is disabled")
 		return nil
 	}
