@@ -11,6 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 	keygenType "github.com/vultisig/commondata/go/vultisig/keygen/v1"
 	vaultType "github.com/vultisig/commondata/go/vultisig/vault/v1"
+	"golang.org/x/exp/slices"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/vultisig/vultiserver/common"
@@ -196,7 +197,7 @@ func (t *DKLSTssService) reshare(vault *vaultType.Vault,
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create session from setup message: %w", err)
 	}
-
+	isInNewCommittee := slices.Contains(keygenCommittee, vault.LocalPartyId)
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
 	go func() {
@@ -204,7 +205,7 @@ func (t *DKLSTssService) reshare(vault *vaultType.Vault,
 			t.logger.Error("failed to process keygen outbound", "error", err)
 		}
 	}()
-	publicKey, chainCode, err := t.processQcInbound(handle, sessionID, hexEncryptionKey, isEdDSA, localPartyID, wg)
+	publicKey, chainCode, err := t.processQcInbound(handle, sessionID, hexEncryptionKey, isEdDSA, localPartyID, isInNewCommittee, wg)
 	wg.Wait()
 	return publicKey, chainCode, err
 }
@@ -274,6 +275,7 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 	hexEncryptionKey string,
 	isEdDSA bool,
 	localPartyID string,
+	isInCommittee bool,
 	wg *sync.WaitGroup) (string, string, error) {
 	defer wg.Done()
 	var messageCache sync.Map
@@ -320,10 +322,17 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 				}
 				if isFinished {
 					t.logger.Infoln("Reshare finished")
+					defer func() {
+						t.isKeygenFinished.Store(true)
+					}()
 					result, err := mpcWrapper.QcSessionFinish(handle)
 					if err != nil {
 						t.logger.Error("fail to finish reshare", "error", err)
 						return "", "", err
+					}
+					if !isInCommittee {
+						t.logger.Infof("Reshare finished, but local party is not in committee")
+						return "", "", nil
 					}
 					buf, err := mpcWrapper.KeyshareToBytes(result)
 					if err != nil {
@@ -347,8 +356,6 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 						}
 						chainCode = hex.EncodeToString(chainCodeBytes)
 					}
-					// This sleep give the local party a chance to send last message to others
-					t.isKeygenFinished.Store(true)
 					if err := t.localStateAccessor.SaveLocalState(encodedPublicKey, encodedShare); err != nil {
 						t.logger.Error("fail to save local state", "error", err)
 						return "", "", err
