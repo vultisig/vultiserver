@@ -354,7 +354,12 @@ func (s *WorkerService) HandleReshareDKLS(ctx context.Context, t *asynq.Task) er
 		return fmt.Errorf("NewDKLSTssService failed: %v: %w", err, asynq.SkipRetry)
 	}
 
-	if err := service.ProcessReshare(vault, req.SessionID, req.HexEncryptionKey, req.EncryptionPassword, req.Email); err != nil {
+	if err := service.ProcessReshare(vault,
+		req.SessionID,
+		req.HexEncryptionKey,
+		req.EncryptionPassword,
+		req.Email,
+		req.ReshareType == types.Plugin); err != nil {
 		s.logger.Errorf("reshare failed: %v", err)
 		return fmt.Errorf("reshare failed: %v: %w", err, asynq.SkipRetry)
 	}
