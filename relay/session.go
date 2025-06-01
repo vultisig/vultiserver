@@ -295,11 +295,24 @@ func (c *Client) EndSession(sessionID string) error {
 	}
 	return nil
 }
-func (c *Client) UploadSetupMessage(sessionID string, payload string) error {
+func (c *Client) UploadSetupMessage(sessionID string, payload string, messageID string, additionalHeaders string) error {
 	sessionUrl := c.relayServer + "/setup-message/" + sessionID
 	body := []byte(payload)
 	bodyReader := bytes.NewReader(body)
-	resp, err := http.Post(sessionUrl, "application/json", bodyReader)
+
+	req, err := http.NewRequest(http.MethodPost, sessionUrl, bodyReader)
+	if err != nil {
+		return fmt.Errorf("fail to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if messageID != "" {
+		req.Header.Set("message_id", messageID)
+	}
+	if additionalHeaders != "" {
+		req.Header.Set("message-id", additionalHeaders)
+	}
+
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("fail to upload setup message: %w", err)
 	}
