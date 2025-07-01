@@ -54,7 +54,7 @@ func (req *ReshareRequest) IsValid() error {
 	if req.EncryptionPassword == "" {
 		return fmt.Errorf("encryption_password is required")
 	}
-	if req.Email == "" {
+	if req.Email == "" && req.ReshareType != Plugin {
 		return fmt.Errorf("email is required")
 	}
 	if len(req.OldParties) == 0 {
