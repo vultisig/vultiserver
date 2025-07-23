@@ -45,7 +45,7 @@ func (s *WorkerService) Reshare(vault *vaultType.Vault,
 	}
 	client := relay.NewRelayClient(serverURL)
 	// Let's register session here
-	if err := client.RegisterSession(sessionID, vault.LocalPartyId); err != nil {
+	if err := client.RegisterSessionWithRetry(sessionID, vault.LocalPartyId); err != nil {
 		return fmt.Errorf("failed to register session: %w", err)
 	}
 	// wait longer for keygen start

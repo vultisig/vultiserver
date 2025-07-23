@@ -55,7 +55,7 @@ func (t *DKLSTssService) ProceeDKLSKeygen(req types.VaultCreateRequest) (string,
 	relayClient := relay.NewRelayClient(serverURL)
 
 	// Let's register session here
-	if err := relayClient.RegisterSession(req.SessionID, req.LocalPartyId); err != nil {
+	if err := relayClient.RegisterSessionWithRetry(req.SessionID, req.LocalPartyId); err != nil {
 		return "", "", fmt.Errorf("failed to register session: %w", err)
 	}
 	// wait longer for keygen start

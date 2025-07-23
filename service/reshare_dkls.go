@@ -35,7 +35,7 @@ func (t *DKLSTssService) ProcessReshare(vault *vaultType.Vault,
 	localPartyID := vault.LocalPartyId
 	client := relay.NewRelayClient(t.cfg.Relay.Server)
 	// Let's register session here
-	if err := client.RegisterSession(sessionID, vault.LocalPartyId); err != nil {
+	if err := client.RegisterSessionWithRetry(sessionID, vault.LocalPartyId); err != nil {
 		return fmt.Errorf("failed to register session: %w", err)
 	}
 	// wait longer for keygen start
