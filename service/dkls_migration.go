@@ -68,7 +68,7 @@ func (t *DKLSTssService) ProceeMigration(vault *vaultType.Vault,
 	localUIEddsa = rightPadWithZeros(localUIEddsa, 64)
 	localPartyId := vault.LocalPartyId
 	// Let's register session here
-	if err := relayClient.RegisterSession(sessionID, localPartyId); err != nil {
+	if err := relayClient.RegisterSessionWithRetry(sessionID, localPartyId); err != nil {
 		return fmt.Errorf("failed to register session: %w", err)
 	}
 	// wait longer for keygen start

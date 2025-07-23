@@ -33,7 +33,7 @@ func (t *DKLSTssService) ProcessDKLSKeysign(req types.KeysignRequest) (map[strin
 	t.localStateAccessor = localStateAccessor
 	localPartyID := localStateAccessor.Vault.LocalPartyId
 	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
-	if err := relayClient.RegisterSession(req.SessionID, localPartyID); err != nil {
+	if err := relayClient.RegisterSessionWithRetry(req.SessionID, localPartyID); err != nil {
 		return nil, fmt.Errorf("failed to start session: %w", err)
 	}
 	// wait longer for keysign start

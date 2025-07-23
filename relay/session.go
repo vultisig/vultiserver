@@ -78,6 +78,7 @@ func (c *Client) RegisterSessionWithRetry(sessionID string, key string) error {
 	}
 	return fmt.Errorf("fail to register session after 3 retries")
 }
+
 func (c *Client) RegisterSession(sessionID string, key string) error {
 	sessionURL := c.relayServer + "/" + sessionID
 	body := []byte("[\"" + key + "\"]")
