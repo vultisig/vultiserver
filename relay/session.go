@@ -333,13 +333,7 @@ func (c *Client) GetSetupMessage(sessionID, messageID string) (string, error) {
 		return "", fmt.Errorf("fail to get setup message: %w", err)
 	}
 	if messageID != "" {
-		// TODO: this is a workaround , need to get dkls fast vault keysign working
-		// but we should all
-		if messageID == "eddsa" {
-			req.Header.Add("message-id", messageID)
-		} else {
-			req.Header.Add("message_id", messageID)
-		}
+		req.Header.Add("message_id", messageID)
 	}
 	c.logger.Infof("getting setup message, sessionID: %s,message_id: %s", sessionID, messageID)
 	resp, err := c.client.Do(req)
