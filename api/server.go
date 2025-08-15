@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -262,8 +263,15 @@ func (s *Server) UploadVault(c echo.Context) error {
 
 	vault, err := common.DecryptVaultFromBackup(passwd, content)
 	if err != nil {
+		s.logger.Errorf("fail to decrypt vault from the backup, err: %v", err)
+		if errors.Is(err, common.ErrWrongPassword) {
+			return c.JSON(http.StatusUnauthorized, echo.Map{
+				"error": "invalid password",
+			})
+		}
 		return fmt.Errorf("fail to decrypt vault from the backup, err: %w", err)
 	}
+
 	if err := s.blockStorage.UploadFile(content, vault.PublicKeyEcdsa+".bak"); err != nil {
 		return fmt.Errorf("fail to upload file, err: %w", err)
 	}
@@ -292,6 +300,11 @@ func (s *Server) DownloadVault(c echo.Context) error {
 
 	_, err = common.DecryptVaultFromBackup(passwd, content)
 	if err != nil {
+		if errors.Is(err, common.ErrWrongPassword) {
+			return c.JSON(http.StatusUnauthorized, echo.Map{
+				"error": "invalid password",
+			})
+		}
 		return fmt.Errorf("fail to decrypt vault from the backup, err: %w", err)
 	}
 	return c.Blob(http.StatusOK, "application/octet-stream", content)
@@ -331,6 +344,11 @@ func (s *Server) GetVault(c echo.Context) error {
 
 	vault, err := common.DecryptVaultFromBackup(passwd, content)
 	if err != nil {
+		if errors.Is(err, common.ErrWrongPassword) {
+			return c.JSON(http.StatusUnauthorized, echo.Map{
+				"error": "invalid password",
+			})
+		}
 		return fmt.Errorf("fail to decrypt vault from the backup, err: %w", err)
 	}
 
@@ -363,6 +381,11 @@ func (s *Server) DeleteVault(c echo.Context) error {
 
 	vault, err := common.DecryptVaultFromBackup(passwd, content)
 	if err != nil {
+		if errors.Is(err, common.ErrWrongPassword) {
+			return c.JSON(http.StatusUnauthorized, echo.Map{
+				"error": "invalid password",
+			})
+		}
 		return fmt.Errorf("fail to decrypt vault from the backup, err: %w", err)
 	}
 	s.logger.Infof("removing vault file %s per request", vault.PublicKeyEcdsa)
@@ -403,6 +426,11 @@ func (s *Server) SignMessages(c echo.Context) error {
 
 	vault, err := common.DecryptVaultFromBackup(req.VaultPassword, content)
 	if err != nil {
+		if errors.Is(err, common.ErrWrongPassword) {
+			return c.JSON(http.StatusUnauthorized, echo.Map{
+				"error": "invalid password",
+			})
+		}
 		return fmt.Errorf("fail to decrypt vault from the backup, err: %w", err)
 	}
 	buf, err := json.Marshal(req)
@@ -517,6 +545,11 @@ func (s *Server) ResendVaultEmail(c echo.Context) error {
 	vault, err := common.DecryptVaultFromBackup(req.Password, content)
 	if err != nil {
 		s.logger.Errorf("fail to decrypt vault from the backup, err: %v", err)
+		if errors.Is(err, common.ErrWrongPassword) {
+			return c.JSON(http.StatusUnauthorized, echo.Map{
+				"error": "invalid password",
+			})
+		}
 		return c.NoContent(http.StatusBadRequest)
 	}
 

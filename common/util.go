@@ -141,7 +141,7 @@ func DecryptVaultFromBackup(password string, vaultBackupRaw []byte) (*vaultType.
 		}
 		vaultRaw, err = DecryptVault(password, vaultBytes)
 		if err != nil {
-			return nil, err
+			return nil, ErrWrongPassword
 		}
 	}
 
