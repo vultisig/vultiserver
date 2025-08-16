@@ -2,7 +2,13 @@
 
 ![Build Status](https://github.com/vultisig/vultiserver/actions/workflows/go.yml/badge.svg?branch=main)
 
-TSS (Threshold Signature Scheme) server providing distributed cryptographic operations for secure multi-party vaults. Enables 2-of-2 and 2-of-3 vaults where no single party controls complete private keys.
+TSS (Threshold Signature Scheme) server providing distributed cryptographic operations for secure multi-party vaults.
+
+**Fast Vault**: Creates a 2-of-2 vault with one mobile device and VultiServer as the second party. Users receive the encrypted vault share via email, maintaining full custody of their assets. VultiServer acts as a convenience signer for "sign on the go" functionality.
+
+VultiServer consists of two components:
+- **API Server**: HTTP server handling keygen and keysign requests from clients
+- **TSS Worker**: Background service performing actual TSS operations
 
 ## Users (Vault Developers)
 
