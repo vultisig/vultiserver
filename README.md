@@ -45,7 +45,8 @@ Creates a new multi-party vault with distributed key shares.
 - `email`: Email to send the encrypted vault share (valid email format)
 - `lib_type`: Type of the library (`1` = DKLS preferred, `0` = GG20 legacy)
 
-**Response:** Status Code: OK
+### Response
+Status Code: OK
 
 #### 2. Keysign - Sign Transactions  
 `POST /vault/sign` - It is used to sign a transaction
@@ -73,6 +74,7 @@ Signs transaction messages using distributed key shares.
 - `is_ecdsa`: Boolean indicating if the key sign is for ECDSA (`true` for ECDSA, `false` for EdDSA)
 - `vault_password`: Password to decrypt the vault share (string)
 
+### Response
 Returns: `{"messageHash": {"r": "...", "s": "...", "recovery_id": 0}}`
 
 #### 3. Reshare - Rotate Key Shares
@@ -111,6 +113,9 @@ Redistributes key shares among new parties while preserving public keys.
 - `lib_type`: Type of the library (`1` = DKLS preferred, `0` = GG20 legacy)
 - `reshare_type`: `0` = Normal, `1` = Plugin (integer)
 
+### Response
+Status Code: OK
+
 #### 4. Migration - Upgrade Legacy Vaults
 `POST /vault/migrate` - This endpoint allows user to migrate the vault share from GG20 to DKLS
 
@@ -132,6 +137,9 @@ Migrates existing GG20 vaults to DKLS for improved performance.
 - `hex_encryption_key`: 32-byte hex encoded string for encryption/decryption (64-char hex, generate with `crypto.randomBytes(32).toString('hex')`)
 - `encryption_password`: Password to encrypt the vault share (string)
 - `email`: Email to send the encrypted vault share (valid email format)
+
+### Response
+Status Code: OK
 
 ### Additional Endpoints
 
