@@ -1,163 +1,233 @@
+# VultiServer
+
 ![Build Status](https://github.com/vultisig/vultiserver/actions/workflows/go.yml/badge.svg?branch=main)
-# Vultisigner
-`Vultisigner`, also known as `VultiServer`, is a simple TSS server providing Keygen, Keysign, and Reshare services. Use cases for VultiServer include:
 
-1. Front-end applications that can't integrate with [mobile-tss-lib](https://github.com/vultisig/mobile-tss-lib) will use VultiServer as a TSS server.
-2. Fast Vault: Allows creating a 2/2 vault with one mobile device, with VultiServer as the second party. Users can sign transactions with one device.
-3. Fast Vault with 2/3: Allows creating a 2/3 vault with two mobile devices and VultiServer as one party. Users can sign transactions with either mobile device without relying on VultiServer to access their crypto assets.
+TSS (Threshold Signature Scheme) server providing distributed cryptographic operations for secure multi-party vaults. Enables 2-of-2 and 2-of-3 vaults where no single party controls complete private keys.
 
-Vultisigner / VultiServer consists of two components:
-- API Server: An HTTP server that handles keygen and keysign requests from clients.
-- TSS Worker: A service triggered by the API Server to perform the actual TSS operations.
+## Users (Vault Developers)
 
-# API Server
-## Ping
-`/ping` , it provide a simple health check for the Api Server , the return value is `Vultisigner is running`
+### Health Check
+`GET /ping` - Returns `"Vultiserver is running"` for API server health verification
 
-## Keygen
-`POST` `/vault/create`
-### Keygen Request
+### Core Operations
+
+#### 1. Keygen - Create New Vault
+`POST /vault/create`
+
+Creates a new multi-party vault with distributed key shares.
+
 ```json
 {
   "name": "My Vault",
-  "session_id": "session id for key generation",
-  "hex_encryption_key": "hex encoded encryption key",
-  "hex_chain_code": "hex encoded chain code",
-  "local_party_id": "local party id",
-  "encryption_password": "password to encryption the generated vault share",
-  "email": "email of the user",
-  "lib_type": "type of the library"
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "hex_encryption_key": "a1b2c3d4e5f6789012345678901234567890123456789012345678901234567890",
+  "hex_chain_code": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", 
+  "local_party_id": "server_party_1",
+  "encryption_password": "password for vault backup",
+  "email": "user@example.com",
+  "lib_type": 1
 }
 ```
-- name: Vault name
-- session_id: Key generation session ID (random UUID)
-- hex_chain_code: 32-byte hex encoded string
-- hex_encryption_key: 32-byte hex encoded string for encryption/decryption
-- local_party_id: Identifier for VultiServer in the keygen session
-- encryption_password: Password to encrypt the vault share
-- email: Email to send the encrypted vault share
-- lib_type: Type of the library (e.g., 0 for GG20 , 1 for DKLS)
-- 
-### Response
 
-Status Code: OK
+**Parameters:**
+- `name`: Human-readable vault name (string)
+- `session_id`: Random UUID v4 (generate with `uuid.v4()`)
+- `hex_encryption_key`: 32-byte hex string (64 chars, generate with `crypto.randomBytes(32).toString('hex')`)
+- `hex_chain_code`: 32-byte hex string (64 chars, generate with `crypto.randomBytes(32).toString('hex')`)
+- `local_party_id`: Server identifier in TSS session (string, can be any unique identifier)
+- `encryption_password`: Password to encrypt vault backup file (string)
+- `email`: Email address for encrypted backup delivery (valid email format)
+- `lib_type`: `1` = DKLS (preferred), `0` = GG20 (legacy)
 
-## Keysign
-`POST` `/vault/sign` , it is used to sign a transaction
+#### 2. Keysign - Sign Transactions  
+`POST /vault/sign`
 
-### Keysign Request
+Signs transaction messages using distributed key shares.
+
 ```json
 {
-  "public_key": "ECDSA public key of the vault",
-  "messages": [
-    "hex encoded message 1",
-    "hex encoded message 2",
-    "hex encoded message N"
-  ], 
-  "session": "session id for this key sign", 
-  "hex_encryption_key": "hex encoded encryption key",
-  "derive_path": "derive path for the key sign",
-  "is_ecdsa": "is the key sign ECDSA or not",
-  "vault_password": "password to decrypt the vault share"
+  "public_key": "04a1b2c3d4e5f67890123456789012345678901234567890123456789012345678901234",
+  "messages": ["deadbeef1234567890abcdef", "cafebabe9876543210fedcba"],
+  "session": "550e8400-e29b-41d4-a716-446655440001", 
+  "hex_encryption_key": "a1b2c3d4e5f6789012345678901234567890123456789012345678901234567890",
+  "derive_path": "m/44'/0'/0'/0/0",
+  "is_ecdsa": true,
+  "vault_password": "password from keygen"
 }
 ```
-- public_key: ECDSA public key of the vault
-- messages: Hex encoded messages to be signed
-- session_id: Key sign session ID (random UUID)
-- hex_encryption_key: 32-byte hex encoded string for encryption/decryption
-- derive_path: Derive path for the key sign (e.g., BITCOIN: m/44'/0'/0'/0/0)
-- is_ecdsa: Boolean indicating if the key sign is for ECDSA
-- vault_password: Password to decrypt the vault share
 
-## Get Vault
-`GET` `/vault/get/{publicKeyECDSA}` , this endpoint allow user to get the vault information
+**Parameters:**
+- `public_key`: ECDSA public key from vault creation (66-char hex string starting with '04')
+- `messages`: Array of hex-encoded transaction hashes to sign (hex strings, no '0x' prefix)
+- `session`: Random UUID v4 for this signing session (generate with `uuid.v4()`)
+- `hex_encryption_key`: 32-byte hex for session encryption (64-char hex, generate with `crypto.randomBytes(32).toString('hex')`)
+- `derive_path`: BIP44 derivation path (string, e.g., `"m/44'/0'/0'/0/0"` for Bitcoin, `"m/44'/60'/0'/0/0"` for Ethereum)
+- `is_ecdsa`: Signature type boolean (`true` for ECDSA, `false` for EdDSA)
+- `vault_password`: Password used during vault creation (string)
 
-Note: please set `x-password` header with the password to decrypt the vault share , if the password is empty or incorrect, server will return an error
-### Response
+Returns: `{"messageHash": {"r": "...", "s": "...", "recovery_id": 0}}`
+
+#### 3. Reshare - Rotate Key Shares
+`POST /vault/reshare`
+
+Redistributes key shares among new parties while preserving public keys.
+
 ```json
 {
-  "name": "vault name",
-  "public_key_ecdsa": "ECDSA public key of the vault",
-  "public_key_eddsa": "EdDSA public key of the vault",
-  "hex_chain_code": "hex encoded chain code",
-  "local_party_id": "local party id"
+  "name": "My Vault", 
+  "public_key": "04a1b2c3d4e5f67890123456789012345678901234567890123456789012345678901234",
+  "session_id": "550e8400-e29b-41d4-a716-446655440002",
+  "hex_encryption_key": "b2c3d4e5f6789012345678901234567890123456789012345678901234567890a1b2",
+  "hex_chain_code": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+  "local_party_id": "server_party_2", 
+  "old_parties": ["server_party_1", "mobile_device_1"],
+  "encryption_password": "new password for backup",
+  "email": "user@example.com",
+  "old_reshare_prefix": "",
+  "lib_type": 1,
+  "reshare_type": 0
 }
 ```
 
-## Reshare
-`POST` `/vault/reshare` , this endpoint allow user to reshare the vault share
+**Parameters:**
+- `name`: Human-readable vault name (string, same as original)
+- `public_key`: ECDSA public key from vault creation (66-char hex string starting with '04')
+- `session_id`: Random UUID v4 for reshare session (generate with `uuid.v4()`)
+- `hex_encryption_key`: New 32-byte hex for this session (64-char hex, generate with `crypto.randomBytes(32).toString('hex')`)
+- `hex_chain_code`: Original chain code from vault creation (64-char hex string)
+- `local_party_id`: New server identifier (string, can be any unique identifier)
+- `old_parties`: Array of previous party IDs that participated in vault (string array, must not be empty)
+- `encryption_password`: New password for reshared vault backup (string)
+- `email`: Email for new backup delivery (valid email format, required unless reshare_type is Plugin)
+- `old_reshare_prefix`: Previous reshare prefix (string, empty "" for first reshare)
+- `lib_type`: `1` = DKLS (preferred), `0` = GG20 (legacy)
+- `reshare_type`: `0` = Normal, `1` = Plugin (integer)
 
-### Reshare Request
+#### 4. Migration - Upgrade Legacy Vaults
+`POST /vault/migrate`
+
+Migrates existing GG20 vaults to DKLS for improved performance.
+
+```json
+{
+  "public_key": "04a1b2c3d4e5f67890123456789012345678901234567890123456789012345678901234",
+  "session_id": "550e8400-e29b-41d4-a716-446655440003",
+  "hex_encryption_key": "c3d4e5f6789012345678901234567890123456789012345678901234567890a1b2c3",
+  "encryption_password": "new password for migrated vault",
+  "email": "user@example.com"
+}
+```
+
+**Parameters:**
+- `public_key`: ECDSA public key of existing GG20 vault (66-char hex string starting with '04')
+- `session_id`: Random UUID v4 for migration session (generate with `uuid.v4()`)
+- `hex_encryption_key`: 32-byte hex for migration session (64-char hex, generate with `crypto.randomBytes(32).toString('hex')`)
+- `encryption_password`: New password for migrated vault backup (string)
+- `email`: Email for migrated backup delivery (valid email format)
+
+### Additional Endpoints
+
+#### Vault Information
+`GET /vault/get/{publicKeyECDSA}` - Retrieve vault metadata
+
+**Headers:** `x-password: base64(vault_password)` or plain vault password  
+**Returns:**
 ```json
 {
   "name": "My Vault",
-  "public_key": "ECDSA public key of the vault",
-  "session_id": "session id for key generation",
-  "hex_encryption_key": "hex encoded encryption key",
-  "hex_chain_code": "hex encoded chain code",
-  "local_party_id": "local party id",
-  "old_parties": ["old party id 1", "old party id 2"], 
-  "encryption_password": "password to encryption the generated vault share",
-  "email": "email of the user",
-  "old_reshare_prefix":"old reshare prefix",
-  "lib_type": "type of the library"
+  "public_key_ecdsa": "04a1b2...",
+  "public_key_eddsa": "a1b2c3...", 
+  "hex_chain_code": "1234567890abcdef...",
+  "local_party_id": "server_party_1"
 }
 ```
-- name: Vault name
-- public_key: ECDSA public key
-- session_id: Reshare session ID (random UUID)
-- hex_encryption_key: 32-byte hex encoded string for encryption/decryption
-- hex_chain_code: 32-byte hex encoded string
-- local_party_id: Identifier for VultiServer in the reshare session
-- old_parties: List of old party IDs
-- encryption_password: Password to encrypt the vault share
-- email: Email to send the encrypted vault share
-- lib_type: Type of the library (e.g., 0 for GG20 , 1 for DKLS)
+Use to verify vault exists and retrieve chain code for operations.
 
-## Resend vault share and verification code
-`POST` `/vault/resend` , this endpoint allow user to resend the vault share and verification code
-Note: user can only request a resend every three minutes
+#### Vault Existence Check  
+`GET /vault/exist/{publicKeyECDSA}` - Quick vault existence verification
 
-### Resend Request
+**Returns:** HTTP 200 (exists) or 400 (not found)  
+Use before attempting operations to avoid unnecessary API calls.
+
+#### Backup Management
+`POST /vault/resend` - Resend encrypted vault backup email
+
 ```json
 {
-  "public_key_ecdsa": "ECDSA public key of the vault",
-  "password": "password to decrypt the vault share",
-  "email": "email of the user"
+  "public_key_ecdsa": "04a1b2c3d4e5f67890123456789012345678901234567890123456789012345678901234",
+  "password": "vault_password_from_creation",
+  "email": "user@example.com"
 }
 ```
-## Verify code
-`GET` `/vault/verify/:public_key_ecdsa/:code` , this endpoint allow user to verify the code
-if server return http status code 200, it means the code is valid , other status code means the code is invalid
+**Rate limit:** Once per 3 minutes per vault  
+Use when users lose their backup email or need vault file resent.
 
-### Migrate Request
-`POST` `/vault/migrate` , this endpoint allow user to migrate the vault share from GG20 to DKLS
-```json
-{
-  "public_key": "ECDSA public key of the vault",
-  "session_id": "session id for key generation",
-  "hex_encryption_key": "hex encoded encryption key",
-  "encryption_password": "password to encryption the generated vault share",
-  "email": "email of the user"
-}
+#### Email Verification
+`GET /vault/verify/{publicKeyECDSA}/{code}` - Verify 4-digit email code
+
+**Returns:** HTTP 200 (valid) or 400 (invalid/expired)  
+**Code format:** 4-digit number (1000-9999) sent in backup email  
+Use to confirm user received and can access backup email before vault operations.
+
+### Integration Notes
+
+1. **Session Coordination**: All parties must use the same `session_id` and join within 5 minutes
+2. **Encryption**: `hex_encryption_key` encrypts TSS messages between parties
+3. **Backups**: Encrypted vault shares automatically emailed after successful operations
+4. **Rate Limits**: 5 requests/30 seconds, 30 burst capacity per IP
+
+## Dev (Repository Management)
+
+### Quick Start
+
+```bash
+# Start Redis
+docker compose up -d
+
+# Copy config
+cp config-example.yaml config.yaml
+
+# Run API server
+go run cmd/vultisigner/main.go
+
+# Run worker (separate terminal)
+go run cmd/worker/main.go
 ```
-- public_key: ECDSA public key
-- session_id: Reshare session ID (random UUID)
-- hex_encryption_key: 32-byte hex encoded string for encryption/decryption
-- encryption_password: Password to encrypt the vault share
-- email: Email to send the encrypted vault share
-## How to setup vultisigner to run locally?
 
-### Prerequisites
-- Docker
-- Golang
+### Development
 
-### Setup redis using docker
+```bash
+# Test
+go test ./...
 
-`docker compose up -d --remove-orphans`
+# Build
+make build
+
+# Docker build
+docker build -t vultiserver .
+```
 
 ### Configuration
 
-see config-example.yaml
+Key settings in `config.yaml`:
+- `server.port`: API server port (default: 8080)
+- `server.vaultsFilePath`: Vault storage directory
+- `redis.*`: Redis connection settings
+- `email_server.api_key`: Mandrill API key for backups
+
+### Architecture
+
+- **API Server** (`cmd/vultisigner`): HTTP endpoints, request validation, task queuing
+- **Worker** (`cmd/worker`): Background TSS operations, email sending
+- **Storage**: Redis (sessions/cache) + Block storage (encrypted vaults)
+- **Relay**: Message coordination between TSS parties
+
+### Key Files
+
+- `api/server.go`: HTTP handlers and routing
+- `service/tss.go`: Core TSS operations (keygen/keysign/reshare)
+- `service/worker.go`: Background task processors
+- `relay/session.go`: Multi-party session management
+- `internal/types/`: Request/response structures
 
 
