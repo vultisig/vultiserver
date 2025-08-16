@@ -30,17 +30,19 @@ Creates a new multi-party vault with distributed key shares.
 ```
 
 **Parameters:**
-- `name`: Human-readable vault name (string)
-- `session_id`: Random UUID v4 (generate with `uuid.v4()`)
-- `hex_encryption_key`: 32-byte hex string (64 chars, generate with `crypto.randomBytes(32).toString('hex')`)
-- `hex_chain_code`: 32-byte hex string (64 chars, generate with `crypto.randomBytes(32).toString('hex')`)
-- `local_party_id`: Server identifier in TSS session (string, can be any unique identifier)
-- `encryption_password`: Password to encrypt vault backup file (string)
-- `email`: Email address for encrypted backup delivery (valid email format)
-- `lib_type`: `1` = DKLS (preferred), `0` = GG20 (legacy)
+- `name`: Vault name (string)
+- `session_id`: Key generation session ID (random UUID, generate with `uuid.v4()`)
+- `hex_encryption_key`: 32-byte hex encoded string for encryption/decryption (64-char hex, generate with `crypto.randomBytes(32).toString('hex')`)
+- `hex_chain_code`: 32-byte hex encoded string (64-char hex, generate with `crypto.randomBytes(32).toString('hex')`)
+- `local_party_id`: Identifier for VultiServer in the keygen session (string, when empty server generates random ID)
+- `encryption_password`: Password to encrypt the vault share (string)
+- `email`: Email to send the encrypted vault share (valid email format)
+- `lib_type`: Type of the library (`1` = DKLS preferred, `0` = GG20 legacy)
+
+**Response:** Status Code: OK
 
 #### 2. Keysign - Sign Transactions  
-`POST /vault/sign`
+`POST /vault/sign` - It is used to sign a transaction
 
 Signs transaction messages using distributed key shares.
 
@@ -57,18 +59,18 @@ Signs transaction messages using distributed key shares.
 ```
 
 **Parameters:**
-- `public_key`: ECDSA public key from vault creation (66-char hex string starting with '04')
-- `messages`: Array of hex-encoded transaction hashes to sign (hex strings, no '0x' prefix)
-- `session`: Random UUID v4 for this signing session (generate with `uuid.v4()`)
-- `hex_encryption_key`: 32-byte hex for session encryption (64-char hex, generate with `crypto.randomBytes(32).toString('hex')`)
-- `derive_path`: BIP44 derivation path (string, e.g., `"m/44'/0'/0'/0/0"` for Bitcoin, `"m/44'/60'/0'/0/0"` for Ethereum)
-- `is_ecdsa`: Signature type boolean (`true` for ECDSA, `false` for EdDSA)
-- `vault_password`: Password used during vault creation (string)
+- `public_key`: ECDSA public key of the vault (66-char hex string starting with '04')
+- `messages`: Hex encoded messages to be signed (array of hex strings, no '0x' prefix)
+- `session`: Session ID for this key sign (random UUID, generate with `uuid.v4()`)
+- `hex_encryption_key`: 32-byte hex encoded string for encryption/decryption (64-char hex, generate with `crypto.randomBytes(32).toString('hex')`)
+- `derive_path`: Derive path for the key sign (string, e.g., BITCOIN: `"m/44'/0'/0'/0/0"`, ETHEREUM: `"m/44'/60'/0'/0/0"`)
+- `is_ecdsa`: Boolean indicating if the key sign is for ECDSA (`true` for ECDSA, `false` for EdDSA)
+- `vault_password`: Password to decrypt the vault share (string)
 
 Returns: `{"messageHash": {"r": "...", "s": "...", "recovery_id": 0}}`
 
 #### 3. Reshare - Rotate Key Shares
-`POST /vault/reshare`
+`POST /vault/reshare` - This endpoint allows user to reshare the vault share
 
 Redistributes key shares among new parties while preserving public keys.
 
@@ -90,21 +92,21 @@ Redistributes key shares among new parties while preserving public keys.
 ```
 
 **Parameters:**
-- `name`: Human-readable vault name (string, same as original)
-- `public_key`: ECDSA public key from vault creation (66-char hex string starting with '04')
-- `session_id`: Random UUID v4 for reshare session (generate with `uuid.v4()`)
-- `hex_encryption_key`: New 32-byte hex for this session (64-char hex, generate with `crypto.randomBytes(32).toString('hex')`)
-- `hex_chain_code`: Original chain code from vault creation (64-char hex string)
-- `local_party_id`: New server identifier (string, can be any unique identifier)
-- `old_parties`: Array of previous party IDs that participated in vault (string array, must not be empty)
-- `encryption_password`: New password for reshared vault backup (string)
-- `email`: Email for new backup delivery (valid email format, required unless reshare_type is Plugin)
-- `old_reshare_prefix`: Previous reshare prefix (string, empty "" for first reshare)
-- `lib_type`: `1` = DKLS (preferred), `0` = GG20 (legacy)
+- `name`: Vault name (string)
+- `public_key`: ECDSA public key (66-char hex string starting with '04')
+- `session_id`: Reshare session ID (random UUID, generate with `uuid.v4()`)
+- `hex_encryption_key`: 32-byte hex encoded string for encryption/decryption (64-char hex, generate with `crypto.randomBytes(32).toString('hex')`)
+- `hex_chain_code`: 32-byte hex encoded string (64-char hex from original vault)
+- `local_party_id`: Identifier for VultiServer in the reshare session (string)
+- `old_parties`: List of old party IDs (string array, must not be empty)
+- `encryption_password`: Password to encrypt the vault share (string)
+- `email`: Email to send the encrypted vault share (valid email format, required unless reshare_type is Plugin)
+- `old_reshare_prefix`: Old reshare prefix (string, empty "" for first reshare)
+- `lib_type`: Type of the library (`1` = DKLS preferred, `0` = GG20 legacy)
 - `reshare_type`: `0` = Normal, `1` = Plugin (integer)
 
 #### 4. Migration - Upgrade Legacy Vaults
-`POST /vault/migrate`
+`POST /vault/migrate` - This endpoint allows user to migrate the vault share from GG20 to DKLS
 
 Migrates existing GG20 vaults to DKLS for improved performance.
 
@@ -119,26 +121,28 @@ Migrates existing GG20 vaults to DKLS for improved performance.
 ```
 
 **Parameters:**
-- `public_key`: ECDSA public key of existing GG20 vault (66-char hex string starting with '04')
-- `session_id`: Random UUID v4 for migration session (generate with `uuid.v4()`)
-- `hex_encryption_key`: 32-byte hex for migration session (64-char hex, generate with `crypto.randomBytes(32).toString('hex')`)
-- `encryption_password`: New password for migrated vault backup (string)
-- `email`: Email for migrated backup delivery (valid email format)
+- `public_key`: ECDSA public key of the vault (66-char hex string starting with '04')
+- `session_id`: Migration session ID (random UUID, generate with `uuid.v4()`)
+- `hex_encryption_key`: 32-byte hex encoded string for encryption/decryption (64-char hex, generate with `crypto.randomBytes(32).toString('hex')`)
+- `encryption_password`: Password to encrypt the vault share (string)
+- `email`: Email to send the encrypted vault share (valid email format)
 
 ### Additional Endpoints
 
 #### Vault Information
-`GET /vault/get/{publicKeyECDSA}` - Retrieve vault metadata
+`GET /vault/get/{publicKeyECDSA}` - This endpoint allows user to get the vault information
+
+**Note:** Please set `x-password` header with the password to decrypt the vault share. If the password is empty or incorrect, server will return an error.
 
 **Headers:** `x-password: base64(vault_password)` or plain vault password  
 **Returns:**
 ```json
 {
-  "name": "My Vault",
-  "public_key_ecdsa": "04a1b2...",
-  "public_key_eddsa": "a1b2c3...", 
-  "hex_chain_code": "1234567890abcdef...",
-  "local_party_id": "server_party_1"
+  "name": "vault name",
+  "public_key_ecdsa": "ECDSA public key of the vault",
+  "public_key_eddsa": "EdDSA public key of the vault",
+  "hex_chain_code": "hex encoded chain code",
+  "local_party_id": "local party id"
 }
 ```
 Use to verify vault exists and retrieve chain code for operations.
@@ -149,23 +153,25 @@ Use to verify vault exists and retrieve chain code for operations.
 **Returns:** HTTP 200 (exists) or 400 (not found)  
 Use before attempting operations to avoid unnecessary API calls.
 
-#### Backup Management
-`POST /vault/resend` - Resend encrypted vault backup email
+#### Resend Vault Share and Verification Code
+`POST /vault/resend` - This endpoint allows user to resend the vault share and verification code
+
+**Note:** User can only request a resend every three minutes
 
 ```json
 {
-  "public_key_ecdsa": "04a1b2c3d4e5f67890123456789012345678901234567890123456789012345678901234",
-  "password": "vault_password_from_creation",
-  "email": "user@example.com"
+  "public_key_ecdsa": "ECDSA public key of the vault",
+  "password": "password to decrypt the vault share",
+  "email": "email of the user"
 }
 ```
-**Rate limit:** Once per 3 minutes per vault  
 Use when users lose their backup email or need vault file resent.
 
-#### Email Verification
-`GET /vault/verify/{publicKeyECDSA}/{code}` - Verify 4-digit email code
+#### Verify Code
+`GET /vault/verify/:public_key_ecdsa/:code` - This endpoint allows user to verify the code
 
-**Returns:** HTTP 200 (valid) or 400 (invalid/expired)  
+If server returns HTTP status code 200, it means the code is valid. Other status codes mean the code is invalid.
+
 **Code format:** 4-digit number (1000-9999) sent in backup email  
 Use to confirm user received and can access backup email before vault operations.
 
