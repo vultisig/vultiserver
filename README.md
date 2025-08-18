@@ -1,16 +1,20 @@
 ![Build Status](https://github.com/vultisig/vultiserver/actions/workflows/go.yml/badge.svg?branch=main)
-# Vultisigner
-`Vultisigner`, also known as `VultiServer`, is a simple TSS server providing Keygen, Keysign, and Reshare services. Use cases for VultiServer include:
+# Vultiserver
+`VultiServer`, is a simple TSS server providing Keygen, Keysign, and Reshare services. 
 
-1. Front-end applications that can't integrate with [mobile-tss-lib](https://github.com/vultisig/mobile-tss-lib) will use VultiServer as a TSS server.
-2. Fast Vault: Allows creating a 2/2 vault with one mobile device, with VultiServer as the second party. Users can sign transactions with one device.
-3. Fast Vault with 2/3: Allows creating a 2/3 vault with two mobile devices and VultiServer as one party. Users can sign transactions with either mobile device without relying on VultiServer to access their crypto assets.
+Devs and Users can then use Fast Vaults: Allows creating a 2/2 vault with one mobile device, with VultiServer as the second party. Users can sign transactions with one device. The Server's encrypted vault share is emailed to the user for their full self-custody. 
 
-Vultisigner / VultiServer consists of two components:
+VultiServer consists of two components:
 - API Server: An HTTP server that handles keygen and keysign requests from clients.
 - TSS Worker: A service triggered by the API Server to perform the actual TSS operations.
 
 # API Server
+
+## Production Base URL
+
+Cloudlfare managed Base URL: https:api.vultisig.com/router
+
+
 ## Ping
 `/ping` , it provide a simple health check for the Api Server , the return value is `Vultisigner is running`
 
