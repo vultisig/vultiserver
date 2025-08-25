@@ -190,6 +190,7 @@ func (t *DKLSTssService) processKeygenOutbound(handle Handle,
 	defer wg.Done()
 	messenger := relay.NewMessenger(t.cfg.Relay.Server, sessionID, hexEncryptionKey, true, "")
 	mpcKeygenWrapper := t.GetMPCKeygenWrapper(isEdDSA)
+	var startTime *time.Time
 	for {
 		outbound, err := mpcKeygenWrapper.KeygenSessionOutputMessage(handle)
 		if err != nil {
@@ -197,6 +198,16 @@ func (t *DKLSTssService) processKeygenOutbound(handle Handle,
 		}
 		if len(outbound) == 0 {
 			if t.isKeygenFinished.Load() {
+				// even when the local party is finished , we better to wait for a little while to guarantee the outbound message is sent
+				if startTime == nil {
+					n := time.Now()
+					startTime = &n
+					continue
+				}
+
+				if time.Since(*startTime) < time.Second {
+					continue
+				}
 				// we are finished
 				return nil
 			}
