@@ -58,7 +58,7 @@ Status Code: OK
     "hex encoded message 2",
     "hex encoded message N"
   ], 
-  "session_id": "session id for this key sign", 
+  "session": "session id for this key sign", 
   "hex_encryption_key": "hex encoded encryption key",
   "derive_path": "derive path for the key sign",
   "is_ecdsa": "is the key sign ECDSA or not",
@@ -67,7 +67,7 @@ Status Code: OK
 ```
 - public_key: ECDSA public key of the vault
 - messages: Hex encoded messages to be signed
-- session_id: Key sign session ID (random UUID)
+- session: Key sign session ID (random UUID)
 - hex_encryption_key: 32-byte hex encoded string for encryption/decryption
 - derive_path: Derive path for the key sign (e.g., BITCOIN: m/44'/0'/0'/0/0)
 - is_ecdsa: Boolean indicating if the key sign is for ECDSA
