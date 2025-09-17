@@ -58,7 +58,7 @@ Status Code: OK
     "hex encoded message 2",
     "hex encoded message N"
   ], 
-  "session": "session id for this key sign", 
+  "session_id": "session id for this key sign", 
   "hex_encryption_key": "hex encoded encryption key",
   "derive_path": "derive path for the key sign",
   "is_ecdsa": "is the key sign ECDSA or not",
