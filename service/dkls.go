@@ -209,7 +209,11 @@ func (t *DKLSTssService) keyImport(sessionID string,
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	// retrieve the setup Message
-	encryptedEncodedSetupMsg, err := relayClient.WaitForSetupMessage(ctx, sessionID, "")
+	additionalHeader := ""
+	if isEdDSA {
+		additionalHeader = "eddsa_key_import"
+	}
+	encryptedEncodedSetupMsg, err := relayClient.WaitForSetupMessage(ctx, sessionID, additionalHeader)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get setup message: %w", err)
 	}
