@@ -46,6 +46,34 @@ Cloudlfare managed Base URL: https:api.vultisig.com/router
 
 Status Code: OK
 
+## KeyImport
+`POST` `/vault/import`
+### KeyImport Request
+```json
+{
+  "name": "My Vault",
+  "session_id": "session id for key generation",
+  "hex_encryption_key": "hex encoded encryption key",
+  "hex_chain_code": "hex encoded chain code",
+  "local_party_id": "local party id",
+  "encryption_password": "password to encryption the generated vault share",
+  "email": "email of the user",
+  "lib_type": "type of the library"
+}
+```
+- name: Vault name
+- session_id: Key generation session ID (random UUID)
+- hex_chain_code: 32-byte hex encoded string
+- hex_encryption_key: 32-byte hex encoded string for encryption/decryption
+- local_party_id: Identifier for VultiServer in the keygen session
+- encryption_password: Password to encrypt the vault share
+- email: Email to send the encrypted vault share
+- lib_type: Type of the library KeyImport it has to be 2
+-
+### Response
+
+Status Code: OK
+
 ## Keysign
 `POST` `/vault/sign` , it is used to sign a transaction
 

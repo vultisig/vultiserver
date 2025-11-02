@@ -55,11 +55,27 @@ type MPCSetupWrapper interface {
 	DecodePartyName(setup []byte, index int) ([]byte, error)
 }
 
+type MPCKeyImportWrapper interface {
+	KeyImportInitiatorNew(privateKey []byte, chainCode []byte, threshold uint8, ids []string) (Handle, []byte, error)
+	KeyImporterNew(setup []byte, id string) (Handle, error)
+}
+type MPCHDWrapper interface {
+	HdSetupMsgNew(keyID []byte, chainPath []byte, ids []byte) ([]byte, error)
+	HdSessionFromSetup(setup []byte, id []byte, share Handle) (Handle, error)
+	HdSessionInputMessage(session Handle, message []byte) (bool, error)
+	HdSessionOutputMessage(session Handle) ([]byte, error)
+	HdSessionMessageReceiver(session Handle, message []byte, index int) (string, error)
+	HdSessionFinish(session Handle) (Handle, error)
+	HdSessionFree(session Handle) error
+}
+
 var _ MPCKeygenWrapper = &MPCWrapperImp{}
 var _ MPCKeysignWrapper = &MPCWrapperImp{}
 var _ MPCKeyshareWrapper = &MPCWrapperImp{}
 var _ MPCSetupWrapper = &MPCWrapperImp{}
 var _ MPCQcWrapper = &MPCWrapperImp{}
+var _ MPCKeyImportWrapper = &MPCWrapperImp{}
+var _ MPCHDWrapper = &MPCWrapperImp{}
 
 type MPCWrapperImp struct {
 	isEdDSA bool
@@ -316,4 +332,73 @@ func (w *MPCWrapperImp) DecodePartyName(setup []byte, index int) ([]byte, error)
 		return eddsaSession.SchnorrDecodePartyName(setup, index)
 	}
 	return session.DklsDecodePartyName(setup, index)
+}
+
+func (w *MPCWrapperImp) HdSessionFree(h Handle) error {
+	if w.isEdDSA {
+		return fmt.Errorf("EdDSA HD not implemented")
+	}
+	return session.DklsHdSessionFree(session.Handle(h))
+}
+
+func (w *MPCWrapperImp) HdSetupMsgNew(keyID []byte, chainPath []byte, ids []byte) ([]byte, error) {
+	if w.isEdDSA {
+		return nil, fmt.Errorf("EdDSA HD not implemented")
+	}
+	return session.DklsHdSetupMsgNew(keyID, chainPath, ids)
+}
+
+func (w *MPCWrapperImp) HdSessionFromSetup(setup []byte, id []byte, share Handle) (Handle, error) {
+	if w.isEdDSA {
+		return Handle(0), fmt.Errorf("EdDSA HD not implemented")
+	}
+	h, err := session.DklsHdSessionFromSetup(setup, id, session.Handle(share))
+	return Handle(h), err
+}
+
+func (w *MPCWrapperImp) HdSessionInputMessage(h Handle, message []byte) (bool, error) {
+	if w.isEdDSA {
+		return false, fmt.Errorf("EdDSA HD not implemented")
+	}
+	return session.DklsHdSessionInputMessage(session.Handle(h), message)
+}
+
+func (w *MPCWrapperImp) HdSessionOutputMessage(h Handle) ([]byte, error) {
+	if w.isEdDSA {
+		return nil, fmt.Errorf("EdDSA HD not implemented")
+	}
+	return session.DklsHdSessionOutputMessage(session.Handle(h))
+}
+
+func (w *MPCWrapperImp) HdSessionMessageReceiver(h Handle, message []byte, index int) (string, error) {
+	if w.isEdDSA {
+		return "", fmt.Errorf("EdDSA HD not implemented")
+	}
+	return session.DklsHdSessionMessageReceiver(session.Handle(h), message, index)
+}
+
+func (w *MPCWrapperImp) HdSessionFinish(h Handle) (Handle, error) {
+	if w.isEdDSA {
+		return Handle(0), fmt.Errorf("EdDSA HD not implemented")
+	}
+	sh, err := session.DklsHdSessionFinish(session.Handle(h))
+	return Handle(sh), err
+}
+
+func (w *MPCWrapperImp) KeyImportInitiatorNew(privateKey []byte, chainCode []byte, threshold uint8, ids []string) (Handle, []byte, error) {
+	if w.isEdDSA {
+		handle, setupMsg, err := eddsaSession.SchnorrKeyImportInitiatorNew(privateKey, chainCode, threshold, ids)
+		return Handle(handle), setupMsg, err
+	}
+	handle, setupMsg, err := session.DklsKeyImportInitiatorNew(privateKey, chainCode, threshold, ids)
+	return Handle(handle), setupMsg, err
+}
+
+func (w *MPCWrapperImp) KeyImporterNew(setup []byte, id string) (Handle, error) {
+	if w.isEdDSA {
+		handle, err := eddsaSession.SchnorrKeyImporterNew(setup, id)
+		return Handle(handle), err
+	}
+	handle, err := session.DklsKeyImporter(setup, id)
+	return Handle(handle), err
 }

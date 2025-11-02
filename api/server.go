@@ -78,6 +78,7 @@ func (s *Server) StartServer() error {
 	grp.POST("/create", s.CreateVault)
 	grp.POST("/reshare", s.ReshareVault)
 	grp.POST("/migrate", s.MigrateVault)
+	grp.POST("/import", s.ImportVault)
 	// grp.POST("/upload", s.UploadVault)
 	// grp.GET("/download/:publicKeyECDSA", s.DownloadVault)
 	grp.GET("/get/:publicKeyECDSA", s.GetVault)     // Get Vault Data
@@ -237,6 +238,46 @@ func (s *Server) MigrateVault(c echo.Context) error {
 		s.logger.Errorf("fail to set session, err: %v", err)
 	}
 	_, err = s.client.Enqueue(asynq.NewTask(tasks.TypeMigrate, buf),
+		asynq.MaxRetry(-1),
+		asynq.Timeout(7*time.Minute),
+		asynq.Retention(10*time.Minute),
+		asynq.Queue(tasks.QUEUE_NAME))
+	if err != nil {
+		return fmt.Errorf("fail to enqueue task, err: %w", err)
+	}
+	return c.NoContent(http.StatusOK)
+}
+
+func (s *Server) ImportVault(c echo.Context) error {
+	var req types.VaultCreateRequest
+	if err := c.Bind(&req); err != nil {
+		return fmt.Errorf("fail to parse request, err: %w", err)
+	}
+	if err := req.IsValid(); err != nil {
+		return fmt.Errorf("invalid request, err: %w", err)
+	}
+	buf, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("fail to marshal to json, err: %w", err)
+	}
+	if err := s.sdClient.Count("vault.import", 1, nil, 1); err != nil {
+		s.logger.Errorf("fail to count metric, err: %v", err)
+	}
+
+	result, err := s.redis.Get(c.Request().Context(), req.SessionID)
+	if err == nil && result != "" {
+		return c.NoContent(http.StatusOK)
+	}
+
+	if err := s.redis.Set(c.Request().Context(), req.SessionID, req.SessionID, 5*time.Minute); err != nil {
+		s.logger.Errorf("fail to set session, err: %v", err)
+	}
+
+	if req.LibType != types.KeyImport {
+		return fmt.Errorf("invalid lib type for import")
+	}
+	typeName := tasks.TypeImport
+	_, err = s.client.Enqueue(asynq.NewTask(typeName, buf),
 		asynq.MaxRetry(-1),
 		asynq.Timeout(7*time.Minute),
 		asynq.Retention(10*time.Minute),
@@ -550,7 +591,7 @@ func (s *Server) createVerificationCode(ctx context.Context, publicKeyECDSA stri
 	verificationCode := strconv.Itoa(code)
 	key := fmt.Sprintf("verification_code_%s", publicKeyECDSA)
 	// verification code will be valid for 1 hour
-	if err := s.redis.Set(context.Background(), key, verificationCode, time.Hour); err != nil {
+	if err := s.redis.Set(ctx, key, verificationCode, time.Hour); err != nil {
 		return "", fmt.Errorf("failed to set cache: %w", err)
 	}
 	return verificationCode, nil

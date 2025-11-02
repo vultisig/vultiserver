@@ -109,6 +109,140 @@ func (t *DKLSTssService) ProceeDKLSKeygen(req types.VaultCreateRequest) (string,
 	return publicKeyECDSA, publicKeyEdDSA, nil
 }
 
+func (t *DKLSTssService) ProcessDKLSKeyImport(req types.VaultCreateRequest) (string, string, error) {
+	serverURL := t.cfg.Relay.Server
+	relayClient := relay.NewRelayClient(serverURL)
+
+	// Let's register session here
+	if err := relayClient.RegisterSessionWithRetry(req.SessionID, req.LocalPartyId); err != nil {
+		return "", "", fmt.Errorf("failed to register session: %w", err)
+	}
+	// wait longer for keygen start
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	partiesJoined, err := relayClient.WaitForSessionStart(ctx, req.SessionID)
+	t.logger.WithFields(logrus.Fields{
+		"sessionID":      req.SessionID,
+		"parties_joined": partiesJoined,
+	}).Info("Session started")
+
+	if err != nil {
+		return "", "", fmt.Errorf("failed to wait for session start: %w", err)
+	}
+	// create ECDSA key
+	publicKeyECDSA, chainCodeECDSA, err := t.keyImportWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, false, partiesJoined)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to KeyImport ECDSA: %w", err)
+	}
+	time.Sleep(500 * time.Millisecond)
+	// create EdDSA key
+	publicKeyEdDSA, _, err := t.keyImportWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, true, partiesJoined)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to KeyImport EdDSA: %w", err)
+	}
+
+	if err := relayClient.CompleteSession(req.SessionID, req.LocalPartyId); err != nil {
+		t.logger.WithFields(logrus.Fields{
+			"session": req.SessionID,
+			"error":   err,
+		}).Error("Failed to complete session")
+	}
+
+	if isCompleted, err := relayClient.CheckCompletedParties(req.SessionID, partiesJoined); err != nil || !isCompleted {
+		t.logger.WithFields(logrus.Fields{
+			"sessionID":   req.SessionID,
+			"isCompleted": isCompleted,
+			"error":       err,
+		}).Error("Failed to check completed parties")
+		return "", "", fmt.Errorf("failed to check completed parties: %w", err)
+	}
+	if t.backup == nil {
+		return publicKeyECDSA, publicKeyEdDSA, nil
+	}
+
+	err = t.backup.BackupVault(req, partiesJoined, publicKeyECDSA, publicKeyEdDSA, chainCodeECDSA, t.localStateAccessor)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to backup vault: %w", err)
+	}
+	return publicKeyECDSA, publicKeyEdDSA, nil
+}
+
+func (t *DKLSTssService) keyImportWithRetry(sessionID string,
+	hexEncryptionKey string,
+	localPartyID string,
+	isEdDSA bool,
+	keygenCommittee []string) (string, string, error) {
+	for i := 0; i < 3; i++ {
+		publicKey, chainCode, err := t.keyImport(sessionID, hexEncryptionKey, localPartyID, isEdDSA, keygenCommittee, i)
+		if err != nil {
+			t.logger.WithFields(logrus.Fields{
+				"session_id":       sessionID,
+				"local_party_id":   localPartyID,
+				"keygen_committee": keygenCommittee,
+				"attempt":          i,
+			}).Error(err)
+			time.Sleep(50 * time.Millisecond)
+			continue
+		} else {
+			return publicKey, chainCode, nil
+		}
+	}
+	return "", "", fmt.Errorf("fail to key import after max retry")
+}
+
+func (t *DKLSTssService) keyImport(sessionID string,
+	hexEncryptionKey string,
+	localPartyID string,
+	isEdDSA bool,
+	keygenCommittee []string,
+	attempt int) (string, string, error) {
+	t.logger.WithFields(logrus.Fields{
+		"session_id":       sessionID,
+		"local_party_id":   localPartyID,
+		"keygen_committee": keygenCommittee,
+		"attempt":          attempt,
+	}).Info("Key Import")
+	t.isKeygenFinished.Store(false)
+	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
+	mpcKeygenWrapper := t.GetMPCKeygenWrapper(isEdDSA)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	// retrieve the setup Message
+	additionalHeader := ""
+	if isEdDSA {
+		additionalHeader = "eddsa_key_import"
+	}
+	encryptedEncodedSetupMsg, err := relayClient.WaitForSetupMessage(ctx, sessionID, additionalHeader)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get setup message: %w", err)
+	}
+	setupMessageBytes, err := t.decodeDecryptMessage(encryptedEncodedSetupMsg, hexEncryptionKey)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to decode setup message: %w", err)
+	}
+
+	handle, err := mpcKeygenWrapper.KeyImporterNew(setupMessageBytes, localPartyID)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create session from setup message: %w", err)
+	}
+	defer func() {
+		if err := mpcKeygenWrapper.KeygenSessionFree(handle); err != nil {
+			t.logger.Error("failed to free keygen session", "error", err)
+		}
+	}()
+	wg := &sync.WaitGroup{}
+	wg.Add(2)
+	go func() {
+		if err := t.processKeygenOutbound(handle, sessionID, hexEncryptionKey, keygenCommittee, localPartyID, isEdDSA, wg); err != nil {
+			t.logger.Error("failed to process keygen outbound", "error", err)
+		}
+	}()
+	publicKey, chainCode, err := t.processKeygenInbound(handle, sessionID, hexEncryptionKey, isEdDSA, localPartyID, wg)
+	wg.Wait()
+	return publicKey, chainCode, err
+}
+
 func (t *DKLSTssService) keygenWithRetry(sessionID string,
 	hexEncryptionKey string,
 	localPartyID string,
