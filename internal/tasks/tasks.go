@@ -11,4 +11,5 @@ const (
 	TypeKeySignDKLS       = "key:signDKLS"
 	TypeReshareDKLS       = "key:reshareDKLS"
 	TypeMigrate           = "key:migrate"
+	TypeImport            = "key:import"
 )

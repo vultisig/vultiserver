@@ -12,6 +12,7 @@ type LibType int
 const (
 	GG20 LibType = iota
 	DKLS
+	KeyImport
 )
 
 // VaultCreateRequest is a struct that represents a request to create a new vault from integration.
