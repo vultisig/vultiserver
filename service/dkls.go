@@ -188,7 +188,7 @@ func (t *DKLSTssService) keyImportWithRetry(sessionID string,
 			return publicKey, chainCode, nil
 		}
 	}
-	return "", "", fmt.Errorf("fail to keygen after max retry")
+	return "", "", fmt.Errorf("fail to key import after max retry")
 }
 
 func (t *DKLSTssService) keyImport(sessionID string,
@@ -202,7 +202,7 @@ func (t *DKLSTssService) keyImport(sessionID string,
 		"local_party_id":   localPartyID,
 		"keygen_committee": keygenCommittee,
 		"attempt":          attempt,
-	}).Info("Keygen")
+	}).Info("Key Import")
 	t.isKeygenFinished.Store(false)
 	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
 	mpcKeygenWrapper := t.GetMPCKeygenWrapper(isEdDSA)

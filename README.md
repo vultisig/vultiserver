@@ -68,7 +68,7 @@ Status Code: OK
 - local_party_id: Identifier for VultiServer in the keygen session
 - encryption_password: Password to encrypt the vault share
 - email: Email to send the encrypted vault share
-- lib_type: Type of the library (e.g., 0 for GG20 , 1 for DKLS)
+- lib_type: Type of the library KeyImport it has to be 2
 -
 ### Response
 
