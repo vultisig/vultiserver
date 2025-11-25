@@ -193,7 +193,7 @@ func (t *DKLSTssService) ProcessDKLSKeyImport(req types.KeyImportRequest) (strin
 		isEdDSA := t.isEdDSAChain(chain)
 		chainPublicKey, _, err := t.keyImportWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, isEdDSA, partiesJoined, strings.ToLower(chain))
 		if err != nil {
-			return "", "", fmt.Errorf("failed to KeyImport ECDSA: %w", err)
+			return "", "", fmt.Errorf("failed to KeyImport for chain:%s,error: %w", chain, err)
 		}
 		ecdsaKeyShare, err := t.localStateAccessor.GetLocalState(chainPublicKey)
 		if err != nil {
