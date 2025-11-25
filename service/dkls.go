@@ -234,7 +234,7 @@ func (t *DKLSTssService) ProcessDKLSKeyImport(req types.KeyImportRequest) (strin
 			"name":  req.Name,
 			"email": req.Email,
 			"error": err,
-		}).Error("fail to send backup through email")
+		}).Error("failed to save vault and schedule email")
 	}
 	// send email to user with vault backup
 	return publicKeyECDSA, publicKeyEdDSA, nil
