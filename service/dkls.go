@@ -6,12 +6,17 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"golang.org/x/exp/slices"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
+	keygen "github.com/vultisig/commondata/go/vultisig/keygen/v1"
+	vaultType "github.com/vultisig/commondata/go/vultisig/vault/v1"
 	"github.com/vultisig/vultiserver/config"
 	"github.com/vultisig/vultiserver/internal/types"
 	"github.com/vultisig/vultiserver/relay"
@@ -19,6 +24,14 @@ import (
 )
 
 var TssKeyGenTimeout = errors.New("keygen timeout")
+
+var EddsaChains = []string{
+	"solana",
+	"polkadot",
+	"sui",
+	"cardano",
+	"ton",
+}
 
 type DKLSTssService struct {
 	cfg                config.Config
@@ -109,7 +122,7 @@ func (t *DKLSTssService) ProceeDKLSKeygen(req types.VaultCreateRequest) (string,
 	return publicKeyECDSA, publicKeyEdDSA, nil
 }
 
-func (t *DKLSTssService) ProcessDKLSKeyImport(req types.VaultCreateRequest) (string, string, error) {
+func (t *DKLSTssService) ProcessDKLSKeyImport(req types.KeyImportRequest) (string, string, error) {
 	serverURL := t.cfg.Relay.Server
 	relayClient := relay.NewRelayClient(serverURL)
 
@@ -131,17 +144,73 @@ func (t *DKLSTssService) ProcessDKLSKeyImport(req types.VaultCreateRequest) (str
 		return "", "", fmt.Errorf("failed to wait for session start: %w", err)
 	}
 	// create ECDSA key
-	publicKeyECDSA, chainCodeECDSA, err := t.keyImportWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, false, partiesJoined)
+	publicKeyECDSA, chainCodeECDSA, err := t.keyImportWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, false, partiesJoined, "")
 	if err != nil {
 		return "", "", fmt.Errorf("failed to KeyImport ECDSA: %w", err)
 	}
 	time.Sleep(500 * time.Millisecond)
 	// create EdDSA key
-	publicKeyEdDSA, _, err := t.keyImportWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, true, partiesJoined)
+	publicKeyEdDSA, _, err := t.keyImportWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, true, partiesJoined, "eddsa_key_import")
 	if err != nil {
 		return "", "", fmt.Errorf("failed to KeyImport EdDSA: %w", err)
 	}
 
+	ecdsaKeyShare, err := t.localStateAccessor.GetLocalState(publicKeyECDSA)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get local sate: %w", err)
+	}
+
+	eddsaKeyShare, err := t.localStateAccessor.GetLocalState(publicKeyEdDSA)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get local sate: %w", err)
+	}
+	vault := &vaultType.Vault{
+		Name:           req.Name,
+		PublicKeyEcdsa: publicKeyECDSA,
+		PublicKeyEddsa: publicKeyEdDSA,
+		Signers:        partiesJoined,
+		CreatedAt:      timestamppb.New(time.Now()),
+		HexChainCode:   chainCodeECDSA,
+		LibType:        keygen.LibType_LIB_TYPE_KEYIMPORT,
+		KeyShares: []*vaultType.Vault_KeyShare{ // root keyshares
+			{
+				PublicKey: publicKeyECDSA,
+				Keyshare:  ecdsaKeyShare,
+			},
+			{
+				PublicKey: publicKeyEdDSA,
+				Keyshare:  eddsaKeyShare,
+			},
+		},
+		LocalPartyId:  req.LocalPartyId,
+		ResharePrefix: "",
+	}
+	for _, chain := range req.Chains {
+		t.logger.WithFields(logrus.Fields{
+			"chain": chain,
+		}).Info("Importing key for chain")
+		// import the chain specific private key
+		isEdDSA := t.isEdDSAChain(chain)
+		chainPublicKey, _, err := t.keyImportWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, isEdDSA, partiesJoined, strings.ToLower(chain))
+		if err != nil {
+			return "", "", fmt.Errorf("failed to KeyImport ECDSA: %w", err)
+		}
+		ecdsaKeyShare, err := t.localStateAccessor.GetLocalState(chainPublicKey)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to get local sate: %w", err)
+		}
+		vault.ChainPublicKeys = append(vault.ChainPublicKeys, &vaultType.Vault_ChainPublicKey{
+			Chain:     chain,
+			PublicKey: chainPublicKey,
+			IsEddsa:   isEdDSA,
+		})
+		vault.KeyShares = append(vault.KeyShares, &vaultType.Vault_KeyShare{
+			PublicKey: chainPublicKey,
+			Keyshare:  ecdsaKeyShare,
+		})
+		time.Sleep(500 * time.Millisecond)
+
+	}
 	if err := relayClient.CompleteSession(req.SessionID, req.LocalPartyId); err != nil {
 		t.logger.WithFields(logrus.Fields{
 			"session": req.SessionID,
@@ -160,11 +229,14 @@ func (t *DKLSTssService) ProcessDKLSKeyImport(req types.VaultCreateRequest) (str
 	if t.backup == nil {
 		return publicKeyECDSA, publicKeyEdDSA, nil
 	}
-
-	err = t.backup.BackupVault(req, partiesJoined, publicKeyECDSA, publicKeyEdDSA, chainCodeECDSA, t.localStateAccessor)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to backup vault: %w", err)
+	if err := t.backup.SaveVaultAndScheduleEmail(vault, req.EncryptionPassword, req.Email); err != nil {
+		t.logger.WithFields(logrus.Fields{
+			"name":  req.Name,
+			"email": req.Email,
+			"error": err,
+		}).Error("fail to send backup through email")
 	}
+	// send email to user with vault backup
 	return publicKeyECDSA, publicKeyEdDSA, nil
 }
 
@@ -172,9 +244,10 @@ func (t *DKLSTssService) keyImportWithRetry(sessionID string,
 	hexEncryptionKey string,
 	localPartyID string,
 	isEdDSA bool,
-	keygenCommittee []string) (string, string, error) {
+	keygenCommittee []string,
+	additionalHeader string) (string, string, error) {
 	for i := 0; i < 3; i++ {
-		publicKey, chainCode, err := t.keyImport(sessionID, hexEncryptionKey, localPartyID, isEdDSA, keygenCommittee, i)
+		publicKey, chainCode, err := t.keyImport(sessionID, hexEncryptionKey, localPartyID, isEdDSA, keygenCommittee, i, additionalHeader)
 		if err != nil {
 			t.logger.WithFields(logrus.Fields{
 				"session_id":       sessionID,
@@ -191,12 +264,16 @@ func (t *DKLSTssService) keyImportWithRetry(sessionID string,
 	return "", "", fmt.Errorf("fail to key import after max retry")
 }
 
+func (t *DKLSTssService) isEdDSAChain(chain string) bool {
+	return slices.Contains(EddsaChains, strings.ToLower(chain))
+}
 func (t *DKLSTssService) keyImport(sessionID string,
 	hexEncryptionKey string,
 	localPartyID string,
 	isEdDSA bool,
 	keygenCommittee []string,
-	attempt int) (string, string, error) {
+	attempt int,
+	additionalHeader string) (string, string, error) {
 	t.logger.WithFields(logrus.Fields{
 		"session_id":       sessionID,
 		"local_party_id":   localPartyID,
@@ -208,11 +285,7 @@ func (t *DKLSTssService) keyImport(sessionID string,
 	mpcKeygenWrapper := t.GetMPCKeygenWrapper(isEdDSA)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	// retrieve the setup Message
-	additionalHeader := ""
-	if isEdDSA {
-		additionalHeader = "eddsa_key_import"
-	}
+
 	encryptedEncodedSetupMsg, err := relayClient.WaitForSetupMessage(ctx, sessionID, additionalHeader)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get setup message: %w", err)

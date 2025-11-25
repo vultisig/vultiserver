@@ -225,6 +225,8 @@ github.com/valyala/fasttemplate v1.2.2 h1:lxLXG0uE3Qnshl9QyaK6XJxMXlQZELvChBOCmQ
 github.com/valyala/fasttemplate v1.2.2/go.mod h1:KHLXt3tVN2HBp8eijSv/kGJopbvo7S+qRAEEKiv+SiQ=
 github.com/vultisig/commondata v0.0.0-20250122093634-15d19de47495 h1:auxbLO9j16DD1f/uFqGoATyZZxgA4pOxynsZBbo/m2s=
 github.com/vultisig/commondata v0.0.0-20250122093634-15d19de47495/go.mod h1:UMc5q0Myab+BvzAe67UQrXTXwKGYNxK7bky7DJM+dl8=
+github.com/vultisig/commondata v0.0.0-20251125054425-71e1e8231dd3 h1:l6KrGa6x9/Fpd92SF0J08Tqi3RO39dZYShT0hlwLIMk=
+github.com/vultisig/commondata v0.0.0-20251125054425-71e1e8231dd3/go.mod h1:UMc5q0Myab+BvzAe67UQrXTXwKGYNxK7bky7DJM+dl8=
 github.com/vultisig/go-wrappers v0.0.0-20250403041248-86911e8aa33f h1:124Xlloih1FOOXv/HTdgl4syIRBa/xfKFXAecrZSPQE=
 github.com/vultisig/go-wrappers v0.0.0-20250403041248-86911e8aa33f/go.mod h1:UfGCxUQW08kiwxyNBiHwXe+ePPuBmHVVS+BS51aU/Jg=
 github.com/vultisig/go-wrappers v0.0.0-20251102212601-90c65d7dbeda h1:XpT6GXCZdP3xj7rEyG4rvpLaOkdptsvOy1X0AUbnUpI=
