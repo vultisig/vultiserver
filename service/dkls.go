@@ -195,7 +195,7 @@ func (t *DKLSTssService) ProcessDKLSKeyImport(req types.KeyImportRequest) (strin
 		if err != nil {
 			return "", "", fmt.Errorf("failed to KeyImport for chain:%s,error: %w", chain, err)
 		}
-		ecdsaKeyShare, err := t.localStateAccessor.GetLocalState(chainPublicKey)
+		ks, err := t.localStateAccessor.GetLocalState(chainPublicKey)
 		if err != nil {
 			return "", "", fmt.Errorf("failed to get local sate: %w", err)
 		}
@@ -206,7 +206,7 @@ func (t *DKLSTssService) ProcessDKLSKeyImport(req types.KeyImportRequest) (strin
 		})
 		vault.KeyShares = append(vault.KeyShares, &vaultType.Vault_KeyShare{
 			PublicKey: chainPublicKey,
-			Keyshare:  ecdsaKeyShare,
+			Keyshare:  ks,
 		})
 		time.Sleep(500 * time.Millisecond)
 
