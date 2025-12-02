@@ -157,12 +157,12 @@ func (t *DKLSTssService) ProcessDKLSKeyImport(req types.KeyImportRequest) (strin
 
 	ecdsaKeyShare, err := t.localStateAccessor.GetLocalState(publicKeyECDSA)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to get local sate: %w", err)
+		return "", "", fmt.Errorf("failed to get local state: %w", err)
 	}
 
 	eddsaKeyShare, err := t.localStateAccessor.GetLocalState(publicKeyEdDSA)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to get local sate: %w", err)
+		return "", "", fmt.Errorf("failed to get local state: %w", err)
 	}
 	vault := &vaultType.Vault{
 		Name:           req.Name,
@@ -197,7 +197,7 @@ func (t *DKLSTssService) ProcessDKLSKeyImport(req types.KeyImportRequest) (strin
 		}
 		ks, err := t.localStateAccessor.GetLocalState(chainPublicKey)
 		if err != nil {
-			return "", "", fmt.Errorf("failed to get local sate: %w", err)
+			return "", "", fmt.Errorf("failed to get local state: %w", err)
 		}
 		vault.ChainPublicKeys = append(vault.ChainPublicKeys, &vaultType.Vault_ChainPublicKey{
 			Chain:     chain,
