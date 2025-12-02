@@ -132,12 +132,9 @@ func (s *WorkerService) HandleImport(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 	defer s.measureTime("worker.vault.import.latency", time.Now(), []string{})
-	var req types.VaultCreateRequest
+	var req types.KeyImportRequest
 	if err := json.Unmarshal(t.Payload(), &req); err != nil {
 		return fmt.Errorf("json.Unmarshal failed: %v: %w", err, asynq.SkipRetry)
-	}
-	if req.LibType != types.KeyImport {
-		return fmt.Errorf("invalid lib type: %d: %w", req.LibType, asynq.SkipRetry)
 	}
 	s.logger.WithFields(logrus.Fields{
 		"name":           req.Name,

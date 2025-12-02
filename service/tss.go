@@ -194,10 +194,15 @@ func (s *WorkerService) BackupVault(req types.VaultCreateRequest,
 		LocalPartyId:  req.LocalPartyId,
 		ResharePrefix: "",
 	}
-	if req.LibType == types.DKLS {
+	switch req.LibType {
+	case types.DKLS:
 		vault.LibType = keygen.LibType_LIB_TYPE_DKLS
-	} else {
+	case types.GG20:
 		vault.LibType = keygen.LibType_LIB_TYPE_GG20
+	case types.KeyImport:
+		vault.LibType = keygen.LibType_LIB_TYPE_KEYIMPORT
+	default:
+		return fmt.Errorf("invalid lib type for vault: %d", req.LibType)
 	}
 	return s.SaveVaultAndScheduleEmail(vault, req.EncryptionPassword, req.Email)
 }

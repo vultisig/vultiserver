@@ -249,7 +249,7 @@ func (s *Server) MigrateVault(c echo.Context) error {
 }
 
 func (s *Server) ImportVault(c echo.Context) error {
-	var req types.VaultCreateRequest
+	var req types.KeyImportRequest
 	if err := c.Bind(&req); err != nil {
 		return fmt.Errorf("fail to parse request, err: %w", err)
 	}
@@ -273,9 +273,6 @@ func (s *Server) ImportVault(c echo.Context) error {
 		s.logger.Errorf("fail to set session, err: %v", err)
 	}
 
-	if req.LibType != types.KeyImport {
-		return fmt.Errorf("invalid lib type for import")
-	}
 	typeName := tasks.TypeImport
 	_, err = s.client.Enqueue(asynq.NewTask(typeName, buf),
 		asynq.MaxRetry(-1),
