@@ -26,11 +26,11 @@ import (
 var TssKeyGenTimeout = errors.New("keygen timeout")
 
 var EddsaChains = []string{
-	"solana",
-	"polkadot",
-	"sui",
-	"cardano",
-	"ton",
+	"Solana",
+	"Polkadot",
+	"Sui",
+	"Cardano",
+	"Ton",
 }
 
 type DKLSTssService struct {
@@ -191,7 +191,7 @@ func (t *DKLSTssService) ProcessDKLSKeyImport(req types.KeyImportRequest) (strin
 		}).Info("Importing key for chain")
 		// import the chain specific private key
 		isEdDSA := t.isEdDSAChain(chain)
-		chainPublicKey, _, err := t.keyImportWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, isEdDSA, partiesJoined, strings.ToLower(chain))
+		chainPublicKey, _, err := t.keyImportWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, isEdDSA, partiesJoined, chain)
 		if err != nil {
 			return "", "", fmt.Errorf("failed to KeyImport for chain:%s,error: %w", chain, err)
 		}
@@ -451,6 +451,7 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 	mpcKeygenWrapper := t.GetMPCKeygenWrapper(isEdDSA)
 	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
 	start := time.Now()
+
 	for {
 		select {
 		case <-time.After(time.Millisecond * 100):
