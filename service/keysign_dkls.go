@@ -68,7 +68,7 @@ func (t *DKLSTssService) ProcessDKLSKeysign(req types.KeysignRequest) (map[strin
 			return nil, fmt.Errorf("public key for chain %s not found in vault", req.Chain)
 		}
 		// when it is KeyImport vault , DerivePath need to be ignored
-		req.DerivePath = ""
+		req.DerivePath = "m"
 	}
 	// start to do keysign
 	for _, msg := range req.Messages {
@@ -223,6 +223,9 @@ func (t *DKLSTssService) keysign(sessionID string,
 		}
 	}()
 	sig, err := t.processKeysignInbound(sessionHandle, sessionID, hexEncryptionKey, localPartyID, isEdDSA, messageID, wg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process keysign inbound: %w", err)
+	}
 	wg.Wait()
 	t.logger.Infoln("Keysign result is:", len(sig))
 	if len(sig) == 0 {
