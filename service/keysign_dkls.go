@@ -16,6 +16,7 @@ import (
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/sirupsen/logrus"
+	v1 "github.com/vultisig/commondata/go/vultisig/keygen/v1"
 	"github.com/vultisig/mobile-tss-lib/tss"
 
 	"github.com/vultisig/vultiserver/common"
@@ -53,6 +54,22 @@ func (t *DKLSTssService) ProcessDKLSKeysign(req types.KeysignRequest) (map[strin
 	if !req.IsECDSA {
 		publicKey = localStateAccessor.Vault.PublicKeyEddsa
 	}
+
+	if req.Chain != "" && localStateAccessor.Vault.LibType == v1.LibType_LIB_TYPE_KEYIMPORT {
+		found := false
+		for _, chainInfo := range localStateAccessor.Vault.ChainPublicKeys {
+			if strings.EqualFold(chainInfo.Chain, req.Chain) {
+				publicKey = chainInfo.PublicKey
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("public key for chain %s not found in vault", req.Chain)
+		}
+		// when it is KeyImport vault , DerivePath need to be ignored
+		req.DerivePath = "m"
+	}
 	// start to do keysign
 	for _, msg := range req.Messages {
 		sig, err := t.keysignWithRetry(req.SessionID, req.HexEncryptionKey, publicKey, !req.IsECDSA, msg, req.DerivePath, localPartyID, partiesJoined)
@@ -81,7 +98,7 @@ func (t *DKLSTssService) keysignWithRetry(sessionID string,
 	derivePath string,
 	localPartyID string,
 	keysignCommittee []string) (*tss.KeysignResponse, error) {
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		keysignResult, err := t.keysign(sessionID,
 			hexEncryptionKey,
 			publicKey,
@@ -206,6 +223,9 @@ func (t *DKLSTssService) keysign(sessionID string,
 		}
 	}()
 	sig, err := t.processKeysignInbound(sessionHandle, sessionID, hexEncryptionKey, localPartyID, isEdDSA, messageID, wg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process keysign inbound: %w", err)
+	}
 	wg.Wait()
 	t.logger.Infoln("Keysign result is:", len(sig))
 	if len(sig) == 0 {
