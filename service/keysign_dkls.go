@@ -67,6 +67,8 @@ func (t *DKLSTssService) ProcessDKLSKeysign(req types.KeysignRequest) (map[strin
 		if !found {
 			return nil, fmt.Errorf("public key for chain %s not found in vault", req.Chain)
 		}
+		// when it is KeyImport vault , DerivePath need to be ignored
+		req.DerivePath = ""
 	}
 	// start to do keysign
 	for _, msg := range req.Messages {
