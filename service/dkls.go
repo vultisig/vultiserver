@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -265,7 +264,7 @@ func (t *DKLSTssService) keyImportWithRetry(sessionID string,
 }
 
 func (t *DKLSTssService) isEdDSAChain(chain string) bool {
-	return slices.Contains(EddsaChains, strings.ToLower(chain))
+	return slices.Contains(EddsaChains, chain)
 }
 func (t *DKLSTssService) keyImport(sessionID string,
 	hexEncryptionKey string,
