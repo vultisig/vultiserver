@@ -452,94 +452,76 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 	start := time.Now()
 
 	for {
-		select {
-		case <-time.After(time.Millisecond * 100):
-			if time.Since(start) > (time.Minute * 2) { // 2 minute timeout
-				t.isKeygenFinished.Store(true)
-				t.logger.Error("keygen timeout")
-				return "", "", TssKeyGenTimeout
-			}
-			messages, err := relayClient.DownloadMessages(sessionID, localPartyID, "")
-			if err != nil {
-				t.logger.Error("failed to download messages", "error", err)
+		if time.Since(start) > (time.Minute * 2) { // 2 minute timeout
+			t.isKeygenFinished.Store(true)
+			t.logger.Error("keygen timeout")
+			return "", "", TssKeyGenTimeout
+		}
+		messages, err := relayClient.DownloadMessages(sessionID, localPartyID, "")
+		if err != nil {
+			t.logger.Error("failed to download messages", "error", err)
+			continue
+		}
+		for _, message := range messages {
+			if message.From == localPartyID {
 				continue
 			}
-			for _, message := range messages {
-				if message.From == localPartyID {
-					continue
-				}
-				cacheKey := fmt.Sprintf("%s-%s-%s", sessionID, localPartyID, message.Hash)
-				if _, found := messageCache.Load(cacheKey); found {
-					t.logger.Infof("Message already applied, skipping,hash: %s", message.Hash)
-					continue
-				}
+			cacheKey := fmt.Sprintf("%s-%s-%s", sessionID, localPartyID, message.Hash)
+			if _, found := messageCache.Load(cacheKey); found {
+				t.logger.Infof("Message already applied, skipping,hash: %s", message.Hash)
+				continue
+			}
 
-				inboundBody, err := t.decodeDecryptMessage(message.Body, hexEncryptionKey)
+			inboundBody, err := t.decodeDecryptMessage(message.Body, hexEncryptionKey)
+			if err != nil {
+				t.logger.Error("fail to decode inbound message", "error", err)
+				continue
+			}
+			t.logger.Infoln("Received message from", message.From)
+			isFinished, err := mpcKeygenWrapper.KeygenSessionInputMessage(handle, inboundBody)
+			if err != nil {
+				t.logger.Error("fail to apply input message", "error", err)
+				continue
+			}
+			messageCache.Store(cacheKey, struct{}{})
+			if err := relayClient.DeleteMessageFromServer(sessionID, localPartyID, message.Hash, ""); err != nil {
+				t.logger.Error("fail to delete message", "error", err)
+			}
+			if isFinished {
+				t.logger.Infoln("Keygen finished")
+				result, err := mpcKeygenWrapper.KeygenSessionFinish(handle)
 				if err != nil {
-					t.logger.Error("fail to decode inbound message", "error", err)
-					continue
+					t.logger.Error("fail to finish keygen", "error", err)
+					return "", "", err
 				}
-				t.logger.Infoln("Received message from", message.From)
-				isFinished, err := mpcKeygenWrapper.KeygenSessionInputMessage(handle, inboundBody)
+				buf, err := mpcKeygenWrapper.KeyshareToBytes(result)
 				if err != nil {
-					t.logger.Error("fail to apply input message", "error", err)
-					continue
+					t.logger.Error("fail to convert keyshare to bytes", "error", err)
+					return "", "", err
 				}
-
-				if err := relayClient.DeleteMessageFromServer(sessionID, localPartyID, message.Hash, ""); err != nil {
-					t.logger.Error("fail to delete message", "error", err)
+				encodedShare := base64.StdEncoding.EncodeToString(buf)
+				publicKeyECDSABytes, err := mpcKeygenWrapper.KeysharePublicKey(result)
+				if err != nil {
+					t.logger.Error("fail to get public key", "error", err)
+					return "", "", err
 				}
-				if isFinished {
-					t.logger.Infoln("Keygen finished")
-					result, err := mpcKeygenWrapper.KeygenSessionFinish(handle)
+				encodedPublicKey := hex.EncodeToString(publicKeyECDSABytes)
+				t.logger.Infof("Public key: %s", encodedPublicKey)
+				chainCode := ""
+				if !isEdDSA {
+					chainCodeBytes, err := mpcKeygenWrapper.KeyshareChainCode(result)
 					if err != nil {
-						t.logger.Error("fail to finish keygen", "error", err)
+						t.logger.Error("fail to get chain code", "error", err)
 						return "", "", err
 					}
-					buf, err := mpcKeygenWrapper.KeyshareToBytes(result)
-					if err != nil {
-						t.logger.Error("fail to convert keyshare to bytes", "error", err)
-						return "", "", err
-					}
-					encodedShare := base64.StdEncoding.EncodeToString(buf)
-					publicKeyECDSABytes, err := mpcKeygenWrapper.KeysharePublicKey(result)
-					if err != nil {
-						t.logger.Error("fail to get public key", "error", err)
-						return "", "", err
-					}
-					encodedPublicKey := hex.EncodeToString(publicKeyECDSABytes)
-					t.logger.Infof("Public key: %s", encodedPublicKey)
-					chainCode := ""
-					if !isEdDSA {
-						chainCodeBytes, err := mpcKeygenWrapper.KeyshareChainCode(result)
-						if err != nil {
-							t.logger.Error("fail to get chain code", "error", err)
-							return "", "", err
-						}
-						chainCode = hex.EncodeToString(chainCodeBytes)
-					}
-					// This sleep give the local party a chance to send last message to others
-					t.isKeygenFinished.Store(true)
-					err = t.localStateAccessor.SaveLocalState(encodedPublicKey, encodedShare)
-					return encodedPublicKey, chainCode, err
+					chainCode = hex.EncodeToString(chainCodeBytes)
 				}
+				// This sleep give the local party a chance to send last message to others
+				t.isKeygenFinished.Store(true)
+				err = t.localStateAccessor.SaveLocalState(encodedPublicKey, encodedShare)
+				return encodedPublicKey, chainCode, err
 			}
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
-}
-
-func (t *DKLSTssService) convertKeygenCommitteeToBytes(paries []string) ([]byte, error) {
-	if len(paries) == 0 {
-		return nil, fmt.Errorf("no parties provided")
-	}
-	result := make([]byte, 0)
-	for _, party := range paries {
-		result = append(result, []byte(party)...)
-		result = append(result, byte(0))
-	}
-	// remove the last 0
-	if len(result) > 0 {
-		result = result[:len(result)-1]
-	}
-	return result, nil
 }
