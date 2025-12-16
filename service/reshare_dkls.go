@@ -294,87 +294,86 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
 	start := time.Now()
 	for {
-		select {
-		case <-time.After(time.Millisecond * 100):
-			if time.Since(start) > time.Minute*2 {
-				// set isKeygenFinished to true , so the other go routine can be stopped
-				t.isKeygenFinished.Store(true)
-				return "", "", TssKeyGenTimeout
-			}
-			messages, err := relayClient.DownloadMessages(sessionID, localPartyID, "")
-			if err != nil {
-				t.logger.Error("fail to get messages", "error", err)
+		if time.Since(start) > time.Minute*2 {
+			// set isKeygenFinished to true , so the other go routine can be stopped
+			t.isKeygenFinished.Store(true)
+			return "", "", TssKeyGenTimeout
+		}
+		messages, err := relayClient.DownloadMessages(sessionID, localPartyID, "")
+		if err != nil {
+			t.logger.Error("fail to get messages", "error", err)
+			continue
+		}
+		for _, message := range messages {
+			if message.From == localPartyID {
+				t.logger.Error("Received message from self, skipping")
 				continue
 			}
-			for _, message := range messages {
-				if message.From == localPartyID {
-					t.logger.Error("Received message from self, skipping")
-					continue
-				}
-				cacheKey := fmt.Sprintf("%s-%s-%s", sessionID, localPartyID, message.Hash)
-				if _, found := messageCache.Load(cacheKey); found {
-					t.logger.Infof("Message already applied, skipping,hash: %s", message.Hash)
-					continue
-				}
-				inboundBody, err := t.decodeDecryptMessage(message.Body, hexEncryptionKey)
-				if err != nil {
-					t.logger.Error("fail to decode message", "error", err)
-					continue
-				}
+			cacheKey := fmt.Sprintf("%s-%s-%s", sessionID, localPartyID, message.Hash)
+			if _, found := messageCache.Load(cacheKey); found {
+				t.logger.Infof("Message already applied, skipping,hash: %s", message.Hash)
+				continue
+			}
+			inboundBody, err := t.decodeDecryptMessage(message.Body, hexEncryptionKey)
+			if err != nil {
+				t.logger.Error("fail to decode message", "error", err)
+				continue
+			}
 
-				isFinished, err := mpcWrapper.QcSessionInputMessage(handle, inboundBody)
+			isFinished, err := mpcWrapper.QcSessionInputMessage(handle, inboundBody)
+			if err != nil {
+				t.logger.Error("fail to apply input message", "error", err)
+				continue
+			}
+			t.logger.Infof("apply inbound message to dkls: %s, from: %s, %d", message.Hash, message.From, message.SequenceNo)
+			if err := relayClient.DeleteMessageFromServer(sessionID, localPartyID, message.Hash, ""); err != nil {
+				t.logger.Error("fail to delete message", "error", err)
+			}
+			messageCache.Store(cacheKey, struct{}{})
+			if isFinished {
+				t.logger.Infoln("Reshare finished")
+				defer func() {
+					t.isKeygenFinished.Store(true)
+				}()
+				result, err := mpcWrapper.QcSessionFinish(handle)
 				if err != nil {
-					t.logger.Error("fail to apply input message", "error", err)
-					continue
+					t.logger.Error("fail to finish reshare", "error", err)
+					return "", "", err
 				}
-				t.logger.Infof("apply inbound message to dkls: %s, from: %s, %d", message.Hash, message.From, message.SequenceNo)
-				if err := relayClient.DeleteMessageFromServer(sessionID, localPartyID, message.Hash, ""); err != nil {
-					t.logger.Error("fail to delete message", "error", err)
+				if !isInCommittee {
+					t.logger.Infof("Reshare finished, but local party is not in committee")
+					return "", "", nil
 				}
-				if isFinished {
-					t.logger.Infoln("Reshare finished")
-					defer func() {
-						t.isKeygenFinished.Store(true)
-					}()
-					result, err := mpcWrapper.QcSessionFinish(handle)
-					if err != nil {
-						t.logger.Error("fail to finish reshare", "error", err)
-						return "", "", err
-					}
-					if !isInCommittee {
-						t.logger.Infof("Reshare finished, but local party is not in committee")
-						return "", "", nil
-					}
-					buf, err := mpcWrapper.KeyshareToBytes(result)
-					if err != nil {
-						t.logger.Error("fail to convert keyshare to bytes", "error", err)
-						return "", "", err
-					}
-					encodedShare := base64.StdEncoding.EncodeToString(buf)
-					publicKeyBytes, err := mpcWrapper.KeysharePublicKey(result)
-					if err != nil {
-						t.logger.Error("fail to get public key", "error", err)
-						return "", "", err
-					}
-					encodedPublicKey := hex.EncodeToString(publicKeyBytes)
-					t.logger.Infof("Public key: %s", encodedPublicKey)
-					chainCode := ""
-					if !isEdDSA {
-						chainCodeBytes, err := mpcWrapper.KeyshareChainCode(result)
-						if err != nil {
-							t.logger.Error("fail to get chain code", "error", err)
-							return "", "", err
-						}
-						chainCode = hex.EncodeToString(chainCodeBytes)
-					}
-					if err := t.localStateAccessor.SaveLocalState(encodedPublicKey, encodedShare); err != nil {
-						t.logger.Error("fail to save local state", "error", err)
-						return "", "", err
-					}
-					time.Sleep(100 * time.Millisecond) // wait for a while to ensure the state is saved
-					return encodedPublicKey, chainCode, nil
+				buf, err := mpcWrapper.KeyshareToBytes(result)
+				if err != nil {
+					t.logger.Error("fail to convert keyshare to bytes", "error", err)
+					return "", "", err
 				}
+				encodedShare := base64.StdEncoding.EncodeToString(buf)
+				publicKeyBytes, err := mpcWrapper.KeysharePublicKey(result)
+				if err != nil {
+					t.logger.Error("fail to get public key", "error", err)
+					return "", "", err
+				}
+				encodedPublicKey := hex.EncodeToString(publicKeyBytes)
+				t.logger.Infof("Public key: %s", encodedPublicKey)
+				chainCode := ""
+				if !isEdDSA {
+					chainCodeBytes, err := mpcWrapper.KeyshareChainCode(result)
+					if err != nil {
+						t.logger.Error("fail to get chain code", "error", err)
+						return "", "", err
+					}
+					chainCode = hex.EncodeToString(chainCodeBytes)
+				}
+				if err := t.localStateAccessor.SaveLocalState(encodedPublicKey, encodedShare); err != nil {
+					t.logger.Error("fail to save local state", "error", err)
+					return "", "", err
+				}
+				time.Sleep(100 * time.Millisecond) // wait for a while to ensure the state is saved
+				return encodedPublicKey, chainCode, nil
 			}
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
