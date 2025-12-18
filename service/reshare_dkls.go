@@ -153,7 +153,6 @@ func (t *DKLSTssService) reshare(vault *vaultType.Vault,
 		}).Infof("Reshare attempt %d,", attempt)
 	mpcWrapper := t.GetMPCKeygenWrapper(isEdDSA)
 	var keyshareHandle Handle
-	t.isKeygenFinished.Store(false)
 	if len(publicKey) > 0 {
 		// we need to get the shares
 		keyshare, err := t.localStateAccessor.GetLocalState(publicKey)
@@ -198,15 +197,12 @@ func (t *DKLSTssService) reshare(vault *vaultType.Vault,
 		return "", "", fmt.Errorf("failed to create session from setup message: %w", err)
 	}
 	isInNewCommittee := slices.Contains(keygenCommittee, vault.LocalPartyId)
-	wg := &sync.WaitGroup{}
-	wg.Add(2)
-	go func() {
-		if err := t.processQcOutbound(handle, sessionID, hexEncryptionKey, keygenCommittee, localPartyID, isEdDSA, wg); err != nil {
-			t.logger.Error("failed to process keygen outbound", "error", err)
-		}
-	}()
-	publicKey, chainCode, err := t.processQcInbound(handle, sessionID, hexEncryptionKey, isEdDSA, localPartyID, isInNewCommittee, wg)
-	wg.Wait()
+
+	if err := t.processQcOutbound(handle, sessionID, hexEncryptionKey, keygenCommittee, localPartyID, isEdDSA); err != nil {
+		t.logger.Error("failed to process keygen outbound", "error", err)
+	}
+
+	publicKey, chainCode, err := t.processQcInbound(handle, sessionID, hexEncryptionKey, isEdDSA, localPartyID, isInNewCommittee, keygenCommittee)
 	return publicKey, chainCode, err
 }
 
@@ -215,37 +211,20 @@ func (t *DKLSTssService) processQcOutbound(handle Handle,
 	hexEncryptionKey string,
 	parties []string,
 	localPartyID string,
-	isEdDSA bool,
-	wg *sync.WaitGroup) error {
-	defer wg.Done()
+	isEdDSA bool) error {
 	messenger := relay.NewMessenger(t.cfg.Relay.Server, sessionID, hexEncryptionKey, true, "")
 	mpcKeygenWrapper := t.GetMPCKeygenWrapper(isEdDSA)
 	defer func() {
 		t.logger.Infof("finish processQcOutbound")
 	}()
-	var startTime *time.Time
+
 	for {
 		outbound, err := mpcKeygenWrapper.QcSessionOutputMessage(handle)
 		if err != nil {
 			t.logger.Error("failed to get output message", "error", err)
 		}
 		if len(outbound) == 0 {
-			if t.isKeygenFinished.Load() {
-				// even when the local party is finished , we better to wait for a little while to guarantee the outbound message is sent
-				if startTime == nil {
-					n := time.Now()
-					startTime = &n
-					continue
-				}
-
-				if time.Since(*startTime) < time.Second {
-					continue
-				}
-				// we are finished
-				return nil
-			}
-			time.Sleep(time.Millisecond * 100)
-			continue
+			return nil
 		}
 		encodedOutbound := base64.StdEncoding.EncodeToString(outbound)
 		for i := 0; i < len(parties); i++ {
@@ -287,8 +266,8 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 	isEdDSA bool,
 	localPartyID string,
 	isInCommittee bool,
-	wg *sync.WaitGroup) (string, string, error) {
-	defer wg.Done()
+	qcParties []string) (string, string, error) {
+
 	var messageCache sync.Map
 	mpcWrapper := t.GetMPCKeygenWrapper(isEdDSA)
 	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
@@ -296,7 +275,6 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 	for {
 		if time.Since(start) > time.Minute*2 {
 			// set isKeygenFinished to true , so the other go routine can be stopped
-			t.isKeygenFinished.Store(true)
 			return "", "", TssKeyGenTimeout
 		}
 		messages, err := relayClient.DownloadMessages(sessionID, localPartyID, "")
@@ -329,12 +307,13 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 			if err := relayClient.DeleteMessageFromServer(sessionID, localPartyID, message.Hash, ""); err != nil {
 				t.logger.Error("fail to delete message", "error", err)
 			}
+			if err := t.processQcOutbound(handle, sessionID, hexEncryptionKey, qcParties, localPartyID, isEdDSA); err != nil {
+				t.logger.Error("failed to process keygen outbound", "error", err)
+			}
 			messageCache.Store(cacheKey, struct{}{})
 			if isFinished {
 				t.logger.Infoln("Reshare finished")
-				defer func() {
-					t.isKeygenFinished.Store(true)
-				}()
+
 				result, err := mpcWrapper.QcSessionFinish(handle)
 				if err != nil {
 					t.logger.Error("fail to finish reshare", "error", err)

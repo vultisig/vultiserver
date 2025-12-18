@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -218,7 +217,7 @@ func (t *DKLSTssService) migrate(
 		"hexChainCode":     hexChainCode,
 		"attempt":          attempt,
 	}).Info("migrate")
-	t.isKeygenFinished.Store(false)
+
 	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
 	mpcKeygenWrapper := t.GetMPCKeygenWrapper(isEdDSA)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -257,14 +256,12 @@ func (t *DKLSTssService) migrate(
 			t.logger.Error("failed to free keygen session", "error", err)
 		}
 	}()
-	wg := &sync.WaitGroup{}
-	wg.Add(2)
-	go func() {
-		if err := t.processKeygenOutbound(handle, sessionID, hexEncryptionKey, keygenCommittee, localPartyID, isEdDSA, wg); err != nil {
-			t.logger.Error("failed to process keygen outbound", "error", err)
-		}
-	}()
-	publicKey, chainCode, err := t.processKeygenInbound(handle, sessionID, hexEncryptionKey, isEdDSA, localPartyID, wg)
-	wg.Wait()
+
+	if err := t.processKeygenOutbound(handle, sessionID, hexEncryptionKey, keygenCommittee, localPartyID, isEdDSA); err != nil {
+		t.logger.Error("failed to process keygen outbound", "error", err)
+	}
+
+	publicKey, chainCode, err := t.processKeygenInbound(handle, sessionID, hexEncryptionKey, isEdDSA, localPartyID, keygenCommittee)
+
 	return publicKey, chainCode, err
 }
