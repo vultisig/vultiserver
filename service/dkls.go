@@ -457,6 +457,7 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 			if err := relayClient.DeleteMessageFromServer(sessionID, localPartyID, message.Hash, ""); err != nil {
 				t.logger.Error("fail to delete message", "error", err)
 			}
+			time.Sleep(time.Millisecond * 50)
 			if err := t.processKeygenOutbound(handle, sessionID, hexEncryptionKey, parties, localPartyID, isEdDSA); err != nil {
 				t.logger.Error("failed to process keygen outbound", "error", err)
 			}

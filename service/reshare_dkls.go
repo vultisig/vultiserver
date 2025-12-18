@@ -307,13 +307,13 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 			if err := relayClient.DeleteMessageFromServer(sessionID, localPartyID, message.Hash, ""); err != nil {
 				t.logger.Error("fail to delete message", "error", err)
 			}
+			time.Sleep(50 * time.Millisecond)
 			if err := t.processQcOutbound(handle, sessionID, hexEncryptionKey, qcParties, localPartyID, isEdDSA); err != nil {
 				t.logger.Error("failed to process keygen outbound", "error", err)
 			}
 			messageCache.Store(cacheKey, struct{}{})
 			if isFinished {
 				t.logger.Infoln("Reshare finished")
-
 				result, err := mpcWrapper.QcSessionFinish(handle)
 				if err != nil {
 					t.logger.Error("fail to finish reshare", "error", err)
