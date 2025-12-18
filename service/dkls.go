@@ -462,7 +462,11 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 			t.logger.Error("failed to download messages", "error", err)
 			continue
 		}
+		if len(messages) > 0 {
+			t.logger.Infof("Downloaded %d messages", len(messages))
+		}
 		for _, message := range messages {
+			t.logger.Infof("get message from:%s,to: %s,hash: %s,seq: %d", message.From, message.To, message.Hash, message.SequenceNo)
 			if message.From == localPartyID {
 				continue
 			}
@@ -477,7 +481,7 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 				t.logger.Error("fail to decode inbound message", "error", err)
 				continue
 			}
-			t.logger.Infoln("Received message from", message.From)
+			t.logger.Infoln("Received message from", message.From, message.Hash)
 			isFinished, err := mpcKeygenWrapper.KeygenSessionInputMessage(handle, inboundBody)
 			if err != nil {
 				t.logger.Error("fail to apply input message", "error", err)

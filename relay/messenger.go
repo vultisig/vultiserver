@@ -110,6 +110,7 @@ func (m *MessengerImp) Send(from, to, body string) error {
 		"from": from,
 		"to":   to,
 		"hash": hashStr,
+		"seq":  m.counter,
 	}).Info("Message sent")
 
 	return nil
