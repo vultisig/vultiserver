@@ -26,7 +26,6 @@ type MessengerImp struct {
 	messageCache     sync.Map
 	isGCM            bool
 	messageID        string
-	counter          int
 }
 
 func NewMessenger(server, sessionID, hexEncryptionKey string, isGCM bool, messageID string) *MessengerImp {
@@ -38,10 +37,12 @@ func NewMessenger(server, sessionID, hexEncryptionKey string, isGCM bool, messag
 		logger:           logrus.WithField("service", "messenger").Logger,
 		messageID:        messageID,
 		isGCM:            isGCM,
-		counter:          0,
 	}
 }
 func (m *MessengerImp) Send(from, to, body string) error {
+	return m.SendWithSeq(from, to, body, 0)
+}
+func (m *MessengerImp) SendWithSeq(from, to, body string, seq int64) error {
 	if m.HexEncryptionKey != "" {
 		encryptedBody, err := encryptWrapper(body, m.HexEncryptionKey, m.isGCM)
 		if err != nil {
@@ -64,19 +65,18 @@ func (m *MessengerImp) Send(from, to, body string) error {
 		To         []string `json:"to,omitempty"`
 		Body       string   `json:"body,omitempty"`
 		Hash       string   `json:"hash,omitempty"`
-		SequenceNo int      `json:"sequence_no,omitempty"`
+		SequenceNo int64    `json:"sequence_no,omitempty"`
 	}{
 		SessionID:  m.SessionID,
 		From:       from,
 		To:         []string{to},
 		Body:       body,
 		Hash:       hashStr,
-		SequenceNo: m.counter,
+		SequenceNo: seq,
 	}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("fail to marshal message: %w", err)
 	}
-	m.counter++
 
 	url := fmt.Sprintf("%s/message/%s", m.Server, m.SessionID)
 	req, err := http.NewRequest("POST", url, bytes.NewReader(buf))
@@ -110,7 +110,7 @@ func (m *MessengerImp) Send(from, to, body string) error {
 		"from": from,
 		"to":   to,
 		"hash": hashStr,
-		"seq":  m.counter,
+		"seq":  seq,
 	}).Info("Message sent")
 
 	return nil

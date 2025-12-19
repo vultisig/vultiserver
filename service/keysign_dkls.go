@@ -301,11 +301,11 @@ func (t *DKLSTssService) processKeysignOutbound(handle Handle,
 				continue
 			}
 
-			t.logger.Infoln("Sending message to", string(receiver))
 			// send the message to the receiver
-			if err := messenger.Send(localPartyID, string(receiver), encodedOutbound); err != nil {
+			if err := messenger.SendWithSeq(localPartyID, string(receiver), encodedOutbound, t.counter); err != nil {
 				t.logger.Errorf("failed to send message: %v", err)
 			}
+			t.counter++
 		}
 	}
 }

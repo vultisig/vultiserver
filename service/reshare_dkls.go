@@ -214,10 +214,6 @@ func (t *DKLSTssService) processQcOutbound(handle Handle,
 	isEdDSA bool) error {
 	messenger := relay.NewMessenger(t.cfg.Relay.Server, sessionID, hexEncryptionKey, true, "")
 	mpcKeygenWrapper := t.GetMPCKeygenWrapper(isEdDSA)
-	defer func() {
-		t.logger.Infof("finish processQcOutbound")
-	}()
-
 	for {
 		outbound, err := mpcKeygenWrapper.QcSessionOutputMessage(handle)
 		if err != nil {
@@ -236,11 +232,11 @@ func (t *DKLSTssService) processQcOutbound(handle Handle,
 				break
 			}
 
-			t.logger.Infoln("Sending message to", receiver)
 			// send the message to the receiver
-			if err := messenger.Send(localPartyID, receiver, encodedOutbound); err != nil {
+			if err := messenger.SendWithSeq(localPartyID, receiver, encodedOutbound, t.counter); err != nil {
 				t.logger.Errorf("failed to send message: %v", err)
 			}
+			t.counter++
 		}
 	}
 }
@@ -307,7 +303,9 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 			if err := relayClient.DeleteMessageFromServer(sessionID, localPartyID, message.Hash, ""); err != nil {
 				t.logger.Error("fail to delete message", "error", err)
 			}
-			time.Sleep(50 * time.Millisecond)
+			if isEdDSA {
+				time.Sleep(50 * time.Millisecond)
+			}
 			if err := t.processQcOutbound(handle, sessionID, hexEncryptionKey, qcParties, localPartyID, isEdDSA); err != nil {
 				t.logger.Error("failed to process keygen outbound", "error", err)
 			}

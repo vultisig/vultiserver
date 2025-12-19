@@ -37,6 +37,7 @@ type DKLSTssService struct {
 	localStateAccessor *relay.LocalStateAccessorImp
 	blockStorage       *storage.BlockStorage
 	backup             VaultOperation
+	counter            int64
 }
 
 func NewDKLSTssService(cfg config.Config,
@@ -398,11 +399,11 @@ func (t *DKLSTssService) processKeygenOutbound(handle Handle,
 				continue
 			}
 
-			t.logger.Infoln("Sending message to", receiver)
 			// send the message to the receiver
-			if err := messenger.Send(localPartyID, receiver, encodedOutbound); err != nil {
+			if err := messenger.SendWithSeq(localPartyID, receiver, encodedOutbound, t.counter); err != nil {
 				t.logger.Errorf("failed to send message: %v", err)
 			}
+			t.counter++
 		}
 	}
 }
@@ -427,9 +428,6 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 		if err != nil {
 			t.logger.Error("failed to download messages", "error", err)
 			continue
-		}
-		if len(messages) > 0 {
-			t.logger.Infof("Downloaded %d messages", len(messages))
 		}
 		for _, message := range messages {
 			t.logger.Infof("get message from:%s,to: %s,hash: %s,seq: %d", message.From, message.To, message.Hash, message.SequenceNo)
@@ -457,7 +455,6 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 			if err := relayClient.DeleteMessageFromServer(sessionID, localPartyID, message.Hash, ""); err != nil {
 				t.logger.Error("fail to delete message", "error", err)
 			}
-			time.Sleep(time.Millisecond * 50)
 			if err := t.processKeygenOutbound(handle, sessionID, hexEncryptionKey, parties, localPartyID, isEdDSA); err != nil {
 				t.logger.Error("failed to process keygen outbound", "error", err)
 			}
