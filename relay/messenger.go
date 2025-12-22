@@ -43,6 +43,10 @@ func (m *MessengerImp) Send(from, to, body string) error {
 	return m.SendWithSeq(from, to, body, 0)
 }
 func (m *MessengerImp) SendWithSeq(from, to, body string, seq int64) error {
+	hash := md5.New()
+	hash.Write([]byte(body))
+	hashStr := hex.EncodeToString(hash.Sum(nil))
+
 	if m.HexEncryptionKey != "" {
 		encryptedBody, err := encryptWrapper(body, m.HexEncryptionKey, m.isGCM)
 		if err != nil {
@@ -50,10 +54,6 @@ func (m *MessengerImp) SendWithSeq(from, to, body string, seq int64) error {
 		}
 		body = base64.StdEncoding.EncodeToString([]byte(encryptedBody))
 	}
-
-	hash := md5.New()
-	hash.Write([]byte(body))
-	hashStr := hex.EncodeToString(hash.Sum(nil))
 
 	if hashStr == "" {
 		return fmt.Errorf("hash is empty")

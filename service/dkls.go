@@ -398,7 +398,7 @@ func (t *DKLSTssService) processKeygenOutbound(handle Handle,
 			if len(receiver) == 0 {
 				continue
 			}
-
+			t.logger.Infof("sending message to: %s , length: %d , seq: %d", receiver, len(outbound), t.counter)
 			// send the message to the receiver
 			if err := messenger.SendWithSeq(localPartyID, receiver, encodedOutbound, t.counter); err != nil {
 				t.logger.Errorf("failed to send message: %v", err)
