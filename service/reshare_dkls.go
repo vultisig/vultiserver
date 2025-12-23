@@ -214,10 +214,6 @@ func (t *DKLSTssService) processQcOutbound(handle Handle,
 	isEdDSA bool) error {
 	messenger := relay.NewMessenger(t.cfg.Relay.Server, sessionID, hexEncryptionKey, true, "")
 	mpcKeygenWrapper := t.GetMPCKeygenWrapper(isEdDSA)
-	defer func() {
-		t.logger.Infof("finish processQcOutbound")
-	}()
-
 	for {
 		outbound, err := mpcKeygenWrapper.QcSessionOutputMessage(handle)
 		if err != nil {
@@ -236,11 +232,11 @@ func (t *DKLSTssService) processQcOutbound(handle Handle,
 				break
 			}
 
-			t.logger.Infoln("Sending message to", receiver)
 			// send the message to the receiver
-			if err := messenger.Send(localPartyID, receiver, encodedOutbound); err != nil {
+			if err := messenger.SendWithSeq(localPartyID, receiver, encodedOutbound, t.counter); err != nil {
 				t.logger.Errorf("failed to send message: %v", err)
 			}
+			t.counter++
 		}
 	}
 }
@@ -267,7 +263,7 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 	localPartyID string,
 	isInCommittee bool,
 	qcParties []string) (string, string, error) {
-
+	t.processedInitiateDeviceMessage.Store(false)
 	var messageCache sync.Map
 	mpcWrapper := t.GetMPCKeygenWrapper(isEdDSA)
 	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
@@ -292,6 +288,14 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 				t.logger.Infof("Message already applied, skipping,hash: %s", message.Hash)
 				continue
 			}
+			// make sure the first party is always the initiate device
+			if t.processedInitiateDeviceMessage.Load() == false && message.From != qcParties[0] {
+				t.logger.Info("waiting for message from party 1")
+				continue
+			} else {
+				t.processedInitiateDeviceMessage.Store(true)
+			}
+
 			inboundBody, err := t.decodeDecryptMessage(message.Body, hexEncryptionKey)
 			if err != nil {
 				t.logger.Error("fail to decode message", "error", err)
@@ -307,7 +311,9 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 			if err := relayClient.DeleteMessageFromServer(sessionID, localPartyID, message.Hash, ""); err != nil {
 				t.logger.Error("fail to delete message", "error", err)
 			}
-			time.Sleep(50 * time.Millisecond)
+			if isEdDSA {
+				time.Sleep(50 * time.Millisecond)
+			}
 			if err := t.processQcOutbound(handle, sessionID, hexEncryptionKey, qcParties, localPartyID, isEdDSA); err != nil {
 				t.logger.Error("failed to process keygen outbound", "error", err)
 			}

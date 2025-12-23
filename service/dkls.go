@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -32,11 +33,13 @@ var EddsaChains = []string{
 }
 
 type DKLSTssService struct {
-	cfg                config.Config
-	logger             *logrus.Logger
-	localStateAccessor *relay.LocalStateAccessorImp
-	blockStorage       *storage.BlockStorage
-	backup             VaultOperation
+	cfg                            config.Config
+	logger                         *logrus.Logger
+	localStateAccessor             *relay.LocalStateAccessorImp
+	blockStorage                   *storage.BlockStorage
+	backup                         VaultOperation
+	counter                        int64
+	processedInitiateDeviceMessage *atomic.Bool
 }
 
 func NewDKLSTssService(cfg config.Config,
@@ -44,11 +47,12 @@ func NewDKLSTssService(cfg config.Config,
 	localStateAccessor *relay.LocalStateAccessorImp,
 	backupInterface VaultOperation) (*DKLSTssService, error) {
 	return &DKLSTssService{
-		cfg:                cfg,
-		logger:             logrus.WithField("service", "dkls").Logger,
-		blockStorage:       blockStorage,
-		localStateAccessor: localStateAccessor,
-		backup:             backupInterface,
+		cfg:                            cfg,
+		logger:                         logrus.WithField("service", "dkls").Logger,
+		blockStorage:                   blockStorage,
+		localStateAccessor:             localStateAccessor,
+		backup:                         backupInterface,
+		processedInitiateDeviceMessage: &atomic.Bool{},
 	}, nil
 }
 
@@ -397,12 +401,12 @@ func (t *DKLSTssService) processKeygenOutbound(handle Handle,
 			if len(receiver) == 0 {
 				continue
 			}
-
-			t.logger.Infoln("Sending message to", receiver)
+			t.logger.Infof("sending message to: %s , length: %d , seq: %d", receiver, len(outbound), t.counter)
 			// send the message to the receiver
-			if err := messenger.Send(localPartyID, receiver, encodedOutbound); err != nil {
+			if err := messenger.SendWithSeq(localPartyID, receiver, encodedOutbound, t.counter); err != nil {
 				t.logger.Errorf("failed to send message: %v", err)
 			}
+			t.counter++
 		}
 	}
 }
@@ -417,7 +421,7 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 	mpcKeygenWrapper := t.GetMPCKeygenWrapper(isEdDSA)
 	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
 	start := time.Now()
-
+	t.processedInitiateDeviceMessage.Store(false)
 	for {
 		if time.Since(start) > (time.Minute * 2) { // 2 minute timeout
 			t.logger.Error("keygen timeout")
@@ -427,9 +431,6 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 		if err != nil {
 			t.logger.Error("failed to download messages", "error", err)
 			continue
-		}
-		if len(messages) > 0 {
-			t.logger.Infof("Downloaded %d messages", len(messages))
 		}
 		for _, message := range messages {
 			t.logger.Infof("get message from:%s,to: %s,hash: %s,seq: %d", message.From, message.To, message.Hash, message.SequenceNo)
@@ -441,7 +442,12 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 				t.logger.Infof("Message already applied, skipping,hash: %s", message.Hash)
 				continue
 			}
-
+			if t.processedInitiateDeviceMessage.Load() == false && message.From != parties[0] {
+				t.logger.Info("waiting for message from party 1")
+				continue
+			} else {
+				t.processedInitiateDeviceMessage.Store(true)
+			}
 			inboundBody, err := t.decodeDecryptMessage(message.Body, hexEncryptionKey)
 			if err != nil {
 				t.logger.Error("fail to decode inbound message", "error", err)
@@ -457,7 +463,6 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 			if err := relayClient.DeleteMessageFromServer(sessionID, localPartyID, message.Hash, ""); err != nil {
 				t.logger.Error("fail to delete message", "error", err)
 			}
-			time.Sleep(time.Millisecond * 50)
 			if err := t.processKeygenOutbound(handle, sessionID, hexEncryptionKey, parties, localPartyID, isEdDSA); err != nil {
 				t.logger.Error("failed to process keygen outbound", "error", err)
 			}
