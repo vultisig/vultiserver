@@ -263,7 +263,7 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 	localPartyID string,
 	isInCommittee bool,
 	qcParties []string) (string, string, error) {
-
+	t.processedInitiateDeviceMessage.Store(false)
 	var messageCache sync.Map
 	mpcWrapper := t.GetMPCKeygenWrapper(isEdDSA)
 	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
@@ -288,6 +288,14 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 				t.logger.Infof("Message already applied, skipping,hash: %s", message.Hash)
 				continue
 			}
+			// make sure the first party is always the initiate device
+			if t.processedInitiateDeviceMessage.Load() == false && message.From != qcParties[0] {
+				t.logger.Info("waiting for message from party 1")
+				continue
+			} else {
+				t.processedInitiateDeviceMessage.Store(true)
+			}
+
 			inboundBody, err := t.decodeDecryptMessage(message.Body, hexEncryptionKey)
 			if err != nil {
 				t.logger.Error("fail to decode message", "error", err)

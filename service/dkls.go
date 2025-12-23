@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -32,12 +33,13 @@ var EddsaChains = []string{
 }
 
 type DKLSTssService struct {
-	cfg                config.Config
-	logger             *logrus.Logger
-	localStateAccessor *relay.LocalStateAccessorImp
-	blockStorage       *storage.BlockStorage
-	backup             VaultOperation
-	counter            int64
+	cfg                            config.Config
+	logger                         *logrus.Logger
+	localStateAccessor             *relay.LocalStateAccessorImp
+	blockStorage                   *storage.BlockStorage
+	backup                         VaultOperation
+	counter                        int64
+	processedInitiateDeviceMessage *atomic.Bool
 }
 
 func NewDKLSTssService(cfg config.Config,
@@ -45,11 +47,12 @@ func NewDKLSTssService(cfg config.Config,
 	localStateAccessor *relay.LocalStateAccessorImp,
 	backupInterface VaultOperation) (*DKLSTssService, error) {
 	return &DKLSTssService{
-		cfg:                cfg,
-		logger:             logrus.WithField("service", "dkls").Logger,
-		blockStorage:       blockStorage,
-		localStateAccessor: localStateAccessor,
-		backup:             backupInterface,
+		cfg:                            cfg,
+		logger:                         logrus.WithField("service", "dkls").Logger,
+		blockStorage:                   blockStorage,
+		localStateAccessor:             localStateAccessor,
+		backup:                         backupInterface,
+		processedInitiateDeviceMessage: &atomic.Bool{},
 	}, nil
 }
 
@@ -418,7 +421,7 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 	mpcKeygenWrapper := t.GetMPCKeygenWrapper(isEdDSA)
 	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
 	start := time.Now()
-
+	t.processedInitiateDeviceMessage.Store(false)
 	for {
 		if time.Since(start) > (time.Minute * 2) { // 2 minute timeout
 			t.logger.Error("keygen timeout")
@@ -439,7 +442,12 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 				t.logger.Infof("Message already applied, skipping,hash: %s", message.Hash)
 				continue
 			}
-
+			if t.processedInitiateDeviceMessage.Load() == false && message.From != parties[0] {
+				t.logger.Info("waiting for message from party 1")
+				continue
+			} else {
+				t.processedInitiateDeviceMessage.Store(true)
+			}
 			inboundBody, err := t.decodeDecryptMessage(message.Body, hexEncryptionKey)
 			if err != nil {
 				t.logger.Error("fail to decode inbound message", "error", err)
