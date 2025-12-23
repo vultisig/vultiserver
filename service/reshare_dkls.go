@@ -197,12 +197,18 @@ func (t *DKLSTssService) reshare(vault *vaultType.Vault,
 		return "", "", fmt.Errorf("failed to create session from setup message: %w", err)
 	}
 	isInNewCommittee := slices.Contains(keygenCommittee, vault.LocalPartyId)
-
+	initiatorName, err := mpcWrapper.DecodePartyName(setupMessageBytes, 0)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to decode party name: %w", err)
+	}
+	t.logger.WithFields(logrus.Fields{
+		"initiate_party_name": string(initiatorName),
+	}).Info("Decoded party name from setup message")
 	if err := t.processQcOutbound(handle, sessionID, hexEncryptionKey, keygenCommittee, localPartyID, isEdDSA); err != nil {
 		t.logger.Error("failed to process keygen outbound", "error", err)
 	}
 
-	publicKey, chainCode, err := t.processQcInbound(handle, sessionID, hexEncryptionKey, isEdDSA, localPartyID, isInNewCommittee, keygenCommittee)
+	publicKey, chainCode, err := t.processQcInbound(handle, sessionID, hexEncryptionKey, isEdDSA, localPartyID, isInNewCommittee, keygenCommittee, string(initiatorName))
 	return publicKey, chainCode, err
 }
 
@@ -262,7 +268,7 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 	isEdDSA bool,
 	localPartyID string,
 	isInCommittee bool,
-	qcParties []string) (string, string, error) {
+	qcParties []string, initiatorName string) (string, string, error) {
 	t.processedInitiateDeviceMessage.Store(false)
 	var messageCache sync.Map
 	mpcWrapper := t.GetMPCKeygenWrapper(isEdDSA)
@@ -289,7 +295,7 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 				continue
 			}
 			// make sure the first party is always the initiate device
-			if t.processedInitiateDeviceMessage.Load() == false && message.From != qcParties[0] {
+			if t.processedInitiateDeviceMessage.Load() == false && message.From != initiatorName {
 				t.logger.Info("waiting for message from party 1")
 				continue
 			} else {

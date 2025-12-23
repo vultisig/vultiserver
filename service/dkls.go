@@ -300,12 +300,18 @@ func (t *DKLSTssService) keyImport(sessionID string,
 			t.logger.Error("failed to free keygen session", "error", err)
 		}
 	}()
-
+	initiatorName, err := mpcKeygenWrapper.DecodePartyName(setupMessageBytes, 0)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to decode party name: %w", err)
+	}
+	t.logger.WithFields(logrus.Fields{
+		"initiate_party_name": string(initiatorName),
+	}).Info("Decoded party name from setup message")
 	if err := t.processKeygenOutbound(handle, sessionID, hexEncryptionKey, keygenCommittee, localPartyID, isEdDSA); err != nil {
 		t.logger.Error("failed to process keygen outbound", "error", err)
 	}
 
-	publicKey, chainCode, err := t.processKeygenInbound(handle, sessionID, hexEncryptionKey, isEdDSA, localPartyID, keygenCommittee)
+	publicKey, chainCode, err := t.processKeygenInbound(handle, sessionID, hexEncryptionKey, isEdDSA, localPartyID, keygenCommittee, string(initiatorName))
 	return publicKey, chainCode, err
 }
 
@@ -367,11 +373,17 @@ func (t *DKLSTssService) keygen(sessionID string,
 			t.logger.Error("failed to free keygen session", "error", err)
 		}
 	}()
-
+	initiatorName, err := mpcKeygenWrapper.DecodePartyName(setupMessageBytes, 0)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to decode party name: %w", err)
+	}
+	t.logger.WithFields(logrus.Fields{
+		"initiate_party_name": string(initiatorName),
+	}).Info("Decoded party name from setup message")
 	if err := t.processKeygenOutbound(handle, sessionID, hexEncryptionKey, keygenCommittee, localPartyID, isEdDSA); err != nil {
 		t.logger.Error("failed to process keygen outbound", "error", err)
 	}
-	publicKey, chainCode, err := t.processKeygenInbound(handle, sessionID, hexEncryptionKey, isEdDSA, localPartyID, keygenCommittee)
+	publicKey, chainCode, err := t.processKeygenInbound(handle, sessionID, hexEncryptionKey, isEdDSA, localPartyID, keygenCommittee, string(initiatorName))
 
 	return publicKey, chainCode, err
 }
@@ -416,12 +428,14 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 	hexEncryptionKey string,
 	isEdDSA bool,
 	localPartyID string,
-	parties []string) (string, string, error) {
+	parties []string,
+	initiatorName string) (string, string, error) {
 	var messageCache sync.Map
 	mpcKeygenWrapper := t.GetMPCKeygenWrapper(isEdDSA)
 	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
 	start := time.Now()
 	t.processedInitiateDeviceMessage.Store(false)
+
 	for {
 		if time.Since(start) > (time.Minute * 2) { // 2 minute timeout
 			t.logger.Error("keygen timeout")
@@ -443,7 +457,7 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 				continue
 			}
 			if len(parties) > 2 {
-				if t.processedInitiateDeviceMessage.Load() == false && message.From != parties[0] {
+				if t.processedInitiateDeviceMessage.Load() == false && message.From != initiatorName {
 					t.logger.Info("waiting for message from party 1")
 					continue
 				} else {

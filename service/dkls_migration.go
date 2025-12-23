@@ -256,12 +256,18 @@ func (t *DKLSTssService) migrate(
 			t.logger.Error("failed to free keygen session", "error", err)
 		}
 	}()
-
+	initiatorName, err := mpcKeygenWrapper.DecodePartyName(setupMessageBytes, 0)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to decode party name: %w", err)
+	}
+	t.logger.WithFields(logrus.Fields{
+		"initiate_party_name": string(initiatorName),
+	}).Info("Decoded party name from setup message")
 	if err := t.processKeygenOutbound(handle, sessionID, hexEncryptionKey, keygenCommittee, localPartyID, isEdDSA); err != nil {
 		t.logger.Error("failed to process keygen outbound", "error", err)
 	}
 
-	publicKey, chainCode, err := t.processKeygenInbound(handle, sessionID, hexEncryptionKey, isEdDSA, localPartyID, keygenCommittee)
+	publicKey, chainCode, err := t.processKeygenInbound(handle, sessionID, hexEncryptionKey, isEdDSA, localPartyID, keygenCommittee, string(initiatorName))
 
 	return publicKey, chainCode, err
 }
