@@ -91,7 +91,7 @@ func (s *WorkerService) Reshare(vault *vaultType.Vault,
 	}
 	time.Sleep(500 * time.Millisecond)
 	for attempt := 0; attempt < 3; attempt++ {
-		ecdsaPubkey, _, err = s.reshare(
+		eddsaPubkey, _, err = s.reshare(
 			tssServerImp,
 			vault,
 			partiesJoined,
