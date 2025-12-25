@@ -71,21 +71,17 @@ func (s *WorkerService) Reshare(vault *vaultType.Vault,
 	}
 	localPartyID := vault.LocalPartyId
 	endCh, wg := s.startMessageDownload(serverURL, sessionID, localPartyID, hexEncryptionKey, tssServerImp, "")
-	ecdsaPubkey, eddsaPubkey, newResharePrefix := "", "", ""
-	for attempt := 0; attempt < 3; attempt++ {
-		ecdsaPubkey, eddsaPubkey, newResharePrefix, err = s.reshareWithRetry(
-			tssServerImp,
-			vault,
-			partiesJoined,
-		)
-		if err == nil {
-			break
-		}
-		s.logger.WithFields(logrus.Fields{
-			"session": sessionID,
-			"attempt": attempt,
-		}).Error(err)
+	ecdsaPubkey, eddsaPubkey, newResharePrefix, err := s.reshare(
+		tssServerImp,
+		vault,
+		partiesJoined,
+	)
+	if err == nil {
+		return fmt.Errorf("failed to reshare: %w", err)
 	}
+	s.logger.WithFields(logrus.Fields{
+		"session": sessionID,
+	}).Error(err)
 	close(endCh)
 	wg.Wait()
 
@@ -224,7 +220,7 @@ func getOldParties(newParties []string, oldSignerCommittee []string) []string {
 	return oldParties
 }
 
-func (s *WorkerService) reshareWithRetry(tssService *mtss.ServiceImpl,
+func (s *WorkerService) reshare(tssService *mtss.ServiceImpl,
 	vault *vaultType.Vault,
 	newParties []string,
 ) (string, string, string, error) {
@@ -236,6 +232,7 @@ func (s *WorkerService) reshareWithRetry(tssService *mtss.ServiceImpl,
 	}
 	newResharePrefix := resp.ResharePrefix
 	ecdsaPubkey := resp.PubKey
+	time.Sleep(500 * time.Millisecond)
 	resp, err = s.reshareEDDSAKey(tssService, vault.PublicKeyEddsa, vault.LocalPartyId, vault.HexChainCode, vault.ResharePrefix,
 		newParties, oldParties, newResharePrefix)
 	if err != nil {
