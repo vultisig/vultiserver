@@ -89,6 +89,10 @@ func (s *WorkerService) Reshare(vault *vaultType.Vault,
 			"attempt":  attempt,
 		}).Error(err)
 	}
+	if err != nil {
+		close(endCh)
+		return err
+	}
 	time.Sleep(500 * time.Millisecond)
 	for attempt := 0; attempt < 3; attempt++ {
 		eddsaPubkey, _, err = s.reshare(
