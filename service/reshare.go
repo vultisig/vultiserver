@@ -91,6 +91,7 @@ func (s *WorkerService) Reshare(vault *vaultType.Vault,
 	}
 	if err != nil {
 		close(endCh)
+		wg.Wait()
 		return err
 	}
 	time.Sleep(500 * time.Millisecond)
@@ -113,7 +114,6 @@ func (s *WorkerService) Reshare(vault *vaultType.Vault,
 	}
 	close(endCh)
 	wg.Wait()
-
 	if err != nil {
 		return err
 	}
