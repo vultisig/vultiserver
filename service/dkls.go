@@ -442,11 +442,13 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 				t.logger.Infof("Message already applied, skipping,hash: %s", message.Hash)
 				continue
 			}
-			if t.processedInitiateDeviceMessage.Load() == false && message.From != parties[0] {
-				t.logger.Info("waiting for message from party 1")
-				continue
-			} else {
-				t.processedInitiateDeviceMessage.Store(true)
+			if len(parties) > 2 {
+				if t.processedInitiateDeviceMessage.Load() == false && message.From != parties[0] {
+					t.logger.Info("waiting for message from party 1")
+					continue
+				} else {
+					t.processedInitiateDeviceMessage.Store(true)
+				}
 			}
 			inboundBody, err := t.decodeDecryptMessage(message.Body, hexEncryptionKey)
 			if err != nil {
