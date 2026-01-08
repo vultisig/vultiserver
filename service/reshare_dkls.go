@@ -289,13 +289,14 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 				continue
 			}
 			// make sure the first party is always the initiate device
-			if t.processedInitiateDeviceMessage.Load() == false && message.From != qcParties[0] {
-				t.logger.Info("waiting for message from party 1")
-				continue
-			} else {
-				t.processedInitiateDeviceMessage.Store(true)
+			if len(qcParties) > 2 {
+				if t.processedInitiateDeviceMessage.Load() == false && message.From != qcParties[0] {
+					t.logger.Info("waiting for message from party 1")
+					continue
+				} else {
+					t.processedInitiateDeviceMessage.Store(true)
+				}
 			}
-
 			inboundBody, err := t.decodeDecryptMessage(message.Body, hexEncryptionKey)
 			if err != nil {
 				t.logger.Error("fail to decode message", "error", err)
