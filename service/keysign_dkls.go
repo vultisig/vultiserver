@@ -50,6 +50,10 @@ func (t *DKLSTssService) ProcessDKLSKeysign(req types.KeysignRequest) (map[strin
 	if err != nil {
 		return nil, fmt.Errorf("failed to wait for session start: %w", err)
 	}
+	if req.Mldsa && localStateAccessor.Vault.PublicKeyMldsa44 == "" {
+		return nil, fmt.Errorf("vault does not have an MLDSA key")
+	}
+
 	publicKey := req.PublicKey
 	if !req.IsECDSA {
 		publicKey = localStateAccessor.Vault.PublicKeyEddsa
