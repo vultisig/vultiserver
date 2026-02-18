@@ -151,7 +151,7 @@ func (t *DKLSTssService) reshare(vault *vaultType.Vault,
 			"session_id": sessionID,
 			"public_key": publicKey,
 		}).Infof("Reshare attempt %d,", attempt)
-	mpcWrapper := t.GetMPCKeygenWrapper(isEdDSA)
+	mpcWrapper := t.GetMPCKeygenWrapper(isEdDSA, false)
 	var keyshareHandle Handle
 	if len(publicKey) > 0 {
 		// we need to get the shares
@@ -213,7 +213,7 @@ func (t *DKLSTssService) processQcOutbound(handle Handle,
 	localPartyID string,
 	isEdDSA bool) error {
 	messenger := relay.NewMessenger(t.cfg.Relay.Server, sessionID, hexEncryptionKey, true, "")
-	mpcKeygenWrapper := t.GetMPCKeygenWrapper(isEdDSA)
+	mpcKeygenWrapper := t.GetMPCKeygenWrapper(isEdDSA, false)
 	for {
 		outbound, err := mpcKeygenWrapper.QcSessionOutputMessage(handle)
 		if err != nil {
@@ -265,7 +265,7 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 	qcParties []string) (string, string, error) {
 	t.processedInitiateDeviceMessage.Store(false)
 	var messageCache sync.Map
-	mpcWrapper := t.GetMPCKeygenWrapper(isEdDSA)
+	mpcWrapper := t.GetMPCKeygenWrapper(isEdDSA, false)
 	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
 	start := time.Now()
 	for {

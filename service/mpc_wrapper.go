@@ -5,6 +5,7 @@ import (
 
 	session "github.com/vultisig/go-wrappers/go-dkls/sessions"
 	eddsaSession "github.com/vultisig/go-wrappers/go-schnorr/sessions"
+	mldsaSession "github.com/vultisig/go-wrappers/mldsa"
 )
 
 type Handle int32
@@ -79,9 +80,13 @@ var _ MPCHDWrapper = &MPCWrapperImp{}
 
 type MPCWrapperImp struct {
 	isEdDSA bool
+	isMldsa bool
 }
 
 func (w *MPCWrapperImp) QcSetupMsgNew(keyshareHandle Handle, threshod int, ids []string, oldParties []int, newParties []int) ([]byte, error) {
+	if w.isMldsa {
+		return nil, fmt.Errorf("QC not supported for mldsa")
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrQcSetupMsgNew(eddsaSession.Handle(keyshareHandle), threshod, ids, oldParties, newParties)
 	}
@@ -89,6 +94,9 @@ func (w *MPCWrapperImp) QcSetupMsgNew(keyshareHandle Handle, threshod int, ids [
 }
 
 func (w *MPCWrapperImp) QcSessionFromSetup(setupMsg []byte, id string, keyshareHandle Handle) (Handle, error) {
+	if w.isMldsa {
+		return Handle(0), fmt.Errorf("QC not supported for mldsa")
+	}
 	if w.isEdDSA {
 		h, err := eddsaSession.SchnorrQcSessionFromSetup(setupMsg, id, eddsaSession.Handle(keyshareHandle))
 		return Handle(h), err
@@ -98,6 +106,9 @@ func (w *MPCWrapperImp) QcSessionFromSetup(setupMsg []byte, id string, keyshareH
 }
 
 func (w *MPCWrapperImp) QcSessionOutputMessage(h Handle) ([]byte, error) {
+	if w.isMldsa {
+		return nil, fmt.Errorf("QC not supported for mldsa")
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrQcSessionOutputMessage(eddsaSession.Handle(h))
 	}
@@ -105,6 +116,9 @@ func (w *MPCWrapperImp) QcSessionOutputMessage(h Handle) ([]byte, error) {
 }
 
 func (w *MPCWrapperImp) QcSessionMessageReceiver(h Handle, message []byte, index int) (string, error) {
+	if w.isMldsa {
+		return "", fmt.Errorf("QC not supported for mldsa")
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrQcSessionMessageReceiver(eddsaSession.Handle(h), message, index)
 	}
@@ -112,6 +126,9 @@ func (w *MPCWrapperImp) QcSessionMessageReceiver(h Handle, message []byte, index
 }
 
 func (w *MPCWrapperImp) QcSessionInputMessage(h Handle, message []byte) (bool, error) {
+	if w.isMldsa {
+		return false, fmt.Errorf("QC not supported for mldsa")
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrQcSessionInputMessage(eddsaSession.Handle(h), message)
 	}
@@ -119,6 +136,9 @@ func (w *MPCWrapperImp) QcSessionInputMessage(h Handle, message []byte) (bool, e
 }
 
 func (w *MPCWrapperImp) QcSessionFinish(h Handle) (Handle, error) {
+	if w.isMldsa {
+		return Handle(0), fmt.Errorf("QC not supported for mldsa")
+	}
 	if w.isEdDSA {
 		h1, err := eddsaSession.SchnorrQcSessionFinish(eddsaSession.Handle(h))
 		return Handle(h1), err
@@ -127,12 +147,16 @@ func (w *MPCWrapperImp) QcSessionFinish(h Handle) (Handle, error) {
 	return Handle(shareHandle), err
 }
 
-func NewMPCWrapperImp(isEdDSA bool) *MPCWrapperImp {
+func NewMPCWrapperImp(isEdDSA bool, isMldsa bool) *MPCWrapperImp {
 	return &MPCWrapperImp{
 		isEdDSA: isEdDSA,
+		isMldsa: isMldsa,
 	}
 }
 func (w *MPCWrapperImp) KeygenSetupMsgNew(threshold int, keyID []byte, ids []byte) ([]byte, error) {
+	if w.isMldsa {
+		return mldsaSession.MldsaKeygenSetupMsgNew(threshold, keyID, ids)
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrKeygenSetupMsgNew(int32(threshold), keyID, ids)
 	}
@@ -140,6 +164,10 @@ func (w *MPCWrapperImp) KeygenSetupMsgNew(threshold int, keyID []byte, ids []byt
 }
 
 func (w *MPCWrapperImp) KeygenSessionFromSetup(setup []byte, id []byte) (Handle, error) {
+	if w.isMldsa {
+		h, err := mldsaSession.MldsaKeygenSessionFromSetup(setup, id)
+		return Handle(h), err
+	}
 	if w.isEdDSA {
 		h, err := eddsaSession.SchnorrKeygenSessionFromSetup(setup, id)
 		return Handle(h), err
@@ -148,6 +176,9 @@ func (w *MPCWrapperImp) KeygenSessionFromSetup(setup []byte, id []byte) (Handle,
 	return Handle(h), err
 }
 func (w *MPCWrapperImp) KeyRefreshSessionFromSetup(setup []byte, id []byte, oldKeyshare Handle) (Handle, error) {
+	if w.isMldsa {
+		return Handle(0), fmt.Errorf("key refresh not supported for mldsa")
+	}
 	if w.isEdDSA {
 		h, err := eddsaSession.SchnorrKeyRefreshSessionFromSetup(setup, id, eddsaSession.Handle(oldKeyshare))
 		return Handle(h), err
@@ -156,12 +187,18 @@ func (w *MPCWrapperImp) KeyRefreshSessionFromSetup(setup []byte, id []byte, oldK
 	return Handle(h), err
 }
 func (w *MPCWrapperImp) KeygenSessionOutputMessage(h Handle) ([]byte, error) {
+	if w.isMldsa {
+		return mldsaSession.MldsaKeygenSessionOutputMessage(mldsaSession.Handle(h))
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrKeygenSessionOutputMessage(eddsaSession.Handle(h))
 	}
 	return session.DklsKeygenSessionOutputMessage(session.Handle(h))
 }
 func (w *MPCWrapperImp) KeygenSessionInputMessage(h Handle, message []byte) (bool, error) {
+	if w.isMldsa {
+		return mldsaSession.MldsaKeygenSessionInputMessage(mldsaSession.Handle(h), message)
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrKeygenSessionInputMessage(eddsaSession.Handle(h), message)
 	}
@@ -169,6 +206,9 @@ func (w *MPCWrapperImp) KeygenSessionInputMessage(h Handle, message []byte) (boo
 }
 
 func (w *MPCWrapperImp) KeygenSessionMessageReceiver(h Handle, message []byte, index int) (string, error) {
+	if w.isMldsa {
+		return mldsaSession.MldsaKeygenSessionMessageReceiver(mldsaSession.Handle(h), message, index)
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrKeygenSessionMessageReceiver(eddsaSession.Handle(h), message, uint32(index))
 	}
@@ -176,6 +216,10 @@ func (w *MPCWrapperImp) KeygenSessionMessageReceiver(h Handle, message []byte, i
 }
 
 func (w *MPCWrapperImp) KeygenSessionFinish(h Handle) (Handle, error) {
+	if w.isMldsa {
+		h1, err := mldsaSession.MldsaKeygenSessionFinish(mldsaSession.Handle(h))
+		return Handle(h1), err
+	}
 	if w.isEdDSA {
 		h1, err := eddsaSession.SchnorrKeygenSessionFinish(eddsaSession.Handle(h))
 		return Handle(h1), err
@@ -185,6 +229,10 @@ func (w *MPCWrapperImp) KeygenSessionFinish(h Handle) (Handle, error) {
 }
 
 func (w *MPCWrapperImp) KeygenSessionFree(h Handle) error {
+	if w.isMldsa {
+		mldsaSession.MldsaKeygenSessionFree(mldsaSession.Handle(h))
+		return nil
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrKeygenSessionFree(eddsaSession.Handle(h))
 	}
@@ -192,6 +240,9 @@ func (w *MPCWrapperImp) KeygenSessionFree(h Handle) error {
 }
 
 func (w *MPCWrapperImp) MigrateSessionFromSetup(setup []byte, id []byte, publicKey []byte, rootChainCode []byte, secretCoefficient []byte) (Handle, error) {
+	if w.isMldsa {
+		return Handle(0), fmt.Errorf("migrate not supported for mldsa")
+	}
 	if w.isEdDSA {
 		h, err := eddsaSession.SchnorrKeyMigrateSessionFromSetup(setup, id, publicKey, rootChainCode, secretCoefficient)
 		return Handle(h), err
@@ -200,6 +251,9 @@ func (w *MPCWrapperImp) MigrateSessionFromSetup(setup []byte, id []byte, publicK
 	return Handle(h), err
 }
 func (w *MPCWrapperImp) SignSetupMsgNew(keyID []byte, chainPath []byte, messageHash []byte, ids []byte) ([]byte, error) {
+	if w.isMldsa {
+		return mldsaSession.MldsaSignSetupMsgNew(keyID, string(chainPath), messageHash, ids)
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrSignSetupMsgNew(keyID, chainPath, messageHash, ids)
 	}
@@ -207,6 +261,10 @@ func (w *MPCWrapperImp) SignSetupMsgNew(keyID []byte, chainPath []byte, messageH
 }
 
 func (w *MPCWrapperImp) SignSessionFromSetup(setup []byte, id []byte, shareOrPresign Handle) (Handle, error) {
+	if w.isMldsa {
+		h, err := mldsaSession.MldsaSignSessionFromSetup(setup, id, mldsaSession.Handle(shareOrPresign))
+		return Handle(h), err
+	}
 	if w.isEdDSA {
 		h, err := eddsaSession.SchnorrSignSessionFromSetup(setup, id, eddsaSession.Handle(shareOrPresign))
 		return Handle(h), err
@@ -215,36 +273,57 @@ func (w *MPCWrapperImp) SignSessionFromSetup(setup []byte, id []byte, shareOrPre
 	return Handle(h), err
 }
 func (w *MPCWrapperImp) SignSessionOutputMessage(h Handle) ([]byte, error) {
+	if w.isMldsa {
+		return mldsaSession.MldsaSignSessionOutputMessage(mldsaSession.Handle(h))
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrSignSessionOutputMessage(eddsaSession.Handle(h))
 	}
 	return session.DklsSignSessionOutputMessage(session.Handle(h))
 }
 func (w *MPCWrapperImp) SignSessionMessageReceiver(h Handle, message []byte, index int) ([]byte, error) {
+	if w.isMldsa {
+		s, err := mldsaSession.MldsaSignSessionMessageReceiver(mldsaSession.Handle(h), message, index)
+		return []byte(s), err
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrSignSessionMessageReceiver(eddsaSession.Handle(h), message, uint32(index))
 	}
 	return session.DklsSignSessionMessageReceiver(session.Handle(h), message, index)
 }
 func (w *MPCWrapperImp) SignSessionInputMessage(h Handle, message []byte) (bool, error) {
+	if w.isMldsa {
+		return mldsaSession.MldsaSignSessionInputMessage(mldsaSession.Handle(h), message)
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrSignSessionInputMessage(eddsaSession.Handle(h), message)
 	}
 	return session.DklsSignSessionInputMessage(session.Handle(h), message)
 }
 func (w *MPCWrapperImp) SignSessionFinish(h Handle) ([]byte, error) {
+	if w.isMldsa {
+		return mldsaSession.MldsaSignSessionFinish(mldsaSession.Handle(h))
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrSignSessionFinish(eddsaSession.Handle(h))
 	}
 	return session.DklsSignSessionFinish(session.Handle(h))
 }
 func (w *MPCWrapperImp) SignSessionFree(h Handle) error {
+	if w.isMldsa {
+		mldsaSession.MldsaSignSessionFree(mldsaSession.Handle(h))
+		return nil
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrSignSessionFree(eddsaSession.Handle(h))
 	}
 	return session.DklsSignSessionFree(session.Handle(h))
 }
 func (w *MPCWrapperImp) KeyshareFromBytes(buf []byte) (Handle, error) {
+	if w.isMldsa {
+		h, err := mldsaSession.MldsaKeyshareFromBytes(buf)
+		return Handle(h), err
+	}
 	if w.isEdDSA {
 		h, err := eddsaSession.SchnorrKeyshareFromBytes(buf)
 		return Handle(h), err
@@ -253,36 +332,54 @@ func (w *MPCWrapperImp) KeyshareFromBytes(buf []byte) (Handle, error) {
 	return Handle(h), err
 }
 func (w *MPCWrapperImp) KeyshareToBytes(share Handle) ([]byte, error) {
+	if w.isMldsa {
+		return mldsaSession.MldsaKeyshareToBytes(mldsaSession.Handle(share))
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrKeyshareToBytes(eddsaSession.Handle(share))
 	}
 	return session.DklsKeyshareToBytes(session.Handle(share))
 }
 func (w *MPCWrapperImp) KeysharePublicKey(share Handle) ([]byte, error) {
+	if w.isMldsa {
+		return mldsaSession.MldsaKeysharePublicKey(mldsaSession.Handle(share))
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrKeysharePublicKey(eddsaSession.Handle(share))
 	}
 	return session.DklsKeysharePublicKey(session.Handle(share))
 }
 func (w *MPCWrapperImp) KeyshareKeyID(share Handle) ([]byte, error) {
+	if w.isMldsa {
+		return mldsaSession.MldsaKeyshareKeyID(mldsaSession.Handle(share))
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrKeyshareKeyID(eddsaSession.Handle(share))
 	}
 	return session.DklsKeyshareKeyID(session.Handle(share))
 }
 func (w *MPCWrapperImp) KeyshareDeriveChildPublicKey(share Handle, derivationPathStr []byte) ([]byte, error) {
+	if w.isMldsa {
+		return nil, fmt.Errorf("not implemented")
+	}
 	if w.isEdDSA {
 		return nil, fmt.Errorf("Not implemented")
 	}
 	return session.DklsKeyshareDeriveChildPublicKey(session.Handle(share), derivationPathStr)
 }
 func (w *MPCWrapperImp) KeyshareToRefreshBytes(share Handle) ([]byte, error) {
+	if w.isMldsa {
+		return nil, fmt.Errorf("not implemented")
+	}
 	if w.isEdDSA {
 		return nil, fmt.Errorf("Not implemented")
 	}
 	return session.DklsKeyshareToRefreshBytes(session.Handle(share))
 }
 func (w *MPCWrapperImp) RefreshShareFromBytes(buf []byte) (Handle, error) {
+	if w.isMldsa {
+		return Handle(0), fmt.Errorf("not implemented")
+	}
 	if w.isEdDSA {
 		return Handle(0), fmt.Errorf("Not implemented")
 	}
@@ -291,24 +388,36 @@ func (w *MPCWrapperImp) RefreshShareFromBytes(buf []byte) (Handle, error) {
 }
 
 func (w *MPCWrapperImp) RefreshShareToBytes(share Handle) ([]byte, error) {
+	if w.isMldsa {
+		return nil, fmt.Errorf("not implemented")
+	}
 	if w.isEdDSA {
 		return nil, fmt.Errorf("Not implemented")
 	}
 	return session.DklsRefreshShareToBytes(session.Handle(share))
 }
 func (w *MPCWrapperImp) KeyshareFree(share Handle) error {
+	if w.isMldsa {
+		return nil
+	}
 	if w.isEdDSA {
 		return nil
 	}
 	return session.DklsKeyshareFree(session.Handle(share))
 }
 func (w *MPCWrapperImp) KeyshareChainCode(share Handle) ([]byte, error) {
+	if w.isMldsa {
+		return nil, nil
+	}
 	if w.isEdDSA {
 		return nil, nil
 	}
 	return session.DklsKeyshareChainCode(session.Handle(share))
 }
 func (w *MPCWrapperImp) DecodeKeyID(setup []byte) ([]byte, error) {
+	if w.isMldsa {
+		return nil, fmt.Errorf("not implemented")
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrDecodeKeyID(setup)
 	}
@@ -316,18 +425,27 @@ func (w *MPCWrapperImp) DecodeKeyID(setup []byte) ([]byte, error) {
 }
 
 func (w *MPCWrapperImp) DecodeSessionID(setup []byte) ([]byte, error) {
+	if w.isMldsa {
+		return nil, fmt.Errorf("not implemented")
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrDecodeSessionID(setup)
 	}
 	return nil, fmt.Errorf("not implemented")
 }
 func (w *MPCWrapperImp) DecodeMessage(setup []byte) ([]byte, error) {
+	if w.isMldsa {
+		return nil, fmt.Errorf("not implemented")
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrDecodeMessage(setup)
 	}
 	return session.DklsDecodeMessage(setup)
 }
 func (w *MPCWrapperImp) DecodePartyName(setup []byte, index int) ([]byte, error) {
+	if w.isMldsa {
+		return nil, fmt.Errorf("not implemented")
+	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrDecodePartyName(setup, index)
 	}
@@ -335,6 +453,9 @@ func (w *MPCWrapperImp) DecodePartyName(setup []byte, index int) ([]byte, error)
 }
 
 func (w *MPCWrapperImp) HdSessionFree(h Handle) error {
+	if w.isMldsa {
+		return fmt.Errorf("HD not supported for mldsa")
+	}
 	if w.isEdDSA {
 		return fmt.Errorf("EdDSA HD not implemented")
 	}
@@ -342,6 +463,9 @@ func (w *MPCWrapperImp) HdSessionFree(h Handle) error {
 }
 
 func (w *MPCWrapperImp) HdSetupMsgNew(keyID []byte, chainPath []byte, ids []byte) ([]byte, error) {
+	if w.isMldsa {
+		return nil, fmt.Errorf("HD not supported for mldsa")
+	}
 	if w.isEdDSA {
 		return nil, fmt.Errorf("EdDSA HD not implemented")
 	}
@@ -349,6 +473,9 @@ func (w *MPCWrapperImp) HdSetupMsgNew(keyID []byte, chainPath []byte, ids []byte
 }
 
 func (w *MPCWrapperImp) HdSessionFromSetup(setup []byte, id []byte, share Handle) (Handle, error) {
+	if w.isMldsa {
+		return Handle(0), fmt.Errorf("HD not supported for mldsa")
+	}
 	if w.isEdDSA {
 		return Handle(0), fmt.Errorf("EdDSA HD not implemented")
 	}
@@ -357,6 +484,9 @@ func (w *MPCWrapperImp) HdSessionFromSetup(setup []byte, id []byte, share Handle
 }
 
 func (w *MPCWrapperImp) HdSessionInputMessage(h Handle, message []byte) (bool, error) {
+	if w.isMldsa {
+		return false, fmt.Errorf("HD not supported for mldsa")
+	}
 	if w.isEdDSA {
 		return false, fmt.Errorf("EdDSA HD not implemented")
 	}
@@ -364,6 +494,9 @@ func (w *MPCWrapperImp) HdSessionInputMessage(h Handle, message []byte) (bool, e
 }
 
 func (w *MPCWrapperImp) HdSessionOutputMessage(h Handle) ([]byte, error) {
+	if w.isMldsa {
+		return nil, fmt.Errorf("HD not supported for mldsa")
+	}
 	if w.isEdDSA {
 		return nil, fmt.Errorf("EdDSA HD not implemented")
 	}
@@ -371,6 +504,9 @@ func (w *MPCWrapperImp) HdSessionOutputMessage(h Handle) ([]byte, error) {
 }
 
 func (w *MPCWrapperImp) HdSessionMessageReceiver(h Handle, message []byte, index int) (string, error) {
+	if w.isMldsa {
+		return "", fmt.Errorf("HD not supported for mldsa")
+	}
 	if w.isEdDSA {
 		return "", fmt.Errorf("EdDSA HD not implemented")
 	}
@@ -378,6 +514,9 @@ func (w *MPCWrapperImp) HdSessionMessageReceiver(h Handle, message []byte, index
 }
 
 func (w *MPCWrapperImp) HdSessionFinish(h Handle) (Handle, error) {
+	if w.isMldsa {
+		return Handle(0), fmt.Errorf("HD not supported for mldsa")
+	}
 	if w.isEdDSA {
 		return Handle(0), fmt.Errorf("EdDSA HD not implemented")
 	}
@@ -386,6 +525,9 @@ func (w *MPCWrapperImp) HdSessionFinish(h Handle) (Handle, error) {
 }
 
 func (w *MPCWrapperImp) KeyImportInitiatorNew(privateKey []byte, chainCode []byte, threshold uint8, ids []string) (Handle, []byte, error) {
+	if w.isMldsa {
+		return Handle(0), nil, fmt.Errorf("key import not supported for mldsa")
+	}
 	if w.isEdDSA {
 		handle, setupMsg, err := eddsaSession.SchnorrKeyImportInitiatorNew(privateKey, chainCode, threshold, ids)
 		return Handle(handle), setupMsg, err
@@ -395,6 +537,9 @@ func (w *MPCWrapperImp) KeyImportInitiatorNew(privateKey []byte, chainCode []byt
 }
 
 func (w *MPCWrapperImp) KeyImporterNew(setup []byte, id string) (Handle, error) {
+	if w.isMldsa {
+		return Handle(0), fmt.Errorf("key import not supported for mldsa")
+	}
 	if w.isEdDSA {
 		handle, err := eddsaSession.SchnorrKeyImporterNew(setup, id)
 		return Handle(handle), err

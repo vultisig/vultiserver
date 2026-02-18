@@ -219,7 +219,7 @@ func (t *DKLSTssService) migrate(
 	}).Info("migrate")
 
 	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
-	mpcKeygenWrapper := t.GetMPCKeygenWrapper(isEdDSA)
+	mpcKeygenWrapper := t.GetMPCKeygenWrapper(isEdDSA, false)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	// retrieve the setup Message
@@ -257,11 +257,11 @@ func (t *DKLSTssService) migrate(
 		}
 	}()
 
-	if err := t.processKeygenOutbound(handle, sessionID, hexEncryptionKey, keygenCommittee, localPartyID, isEdDSA); err != nil {
+	if err := t.processKeygenOutbound(handle, sessionID, hexEncryptionKey, keygenCommittee, localPartyID, isEdDSA, false); err != nil {
 		t.logger.Error("failed to process keygen outbound", "error", err)
 	}
 
-	publicKey, chainCode, err := t.processKeygenInbound(handle, sessionID, hexEncryptionKey, isEdDSA, localPartyID, keygenCommittee)
+	publicKey, chainCode, err := t.processKeygenInbound(handle, sessionID, hexEncryptionKey, isEdDSA, localPartyID, keygenCommittee, false)
 
 	return publicKey, chainCode, err
 }
