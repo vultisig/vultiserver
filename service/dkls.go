@@ -82,15 +82,25 @@ func (t *DKLSTssService) ProceeDKLSKeygen(req types.VaultCreateRequest) (string,
 		return "", "", fmt.Errorf("failed to wait for session start: %w", err)
 	}
 	// create ECDSA key
-	publicKeyECDSA, chainCodeECDSA, err := t.keygenWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, false, partiesJoined, req.Mldsa)
+	publicKeyECDSA, chainCodeECDSA, err := t.keygenWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, false, partiesJoined, false)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to keygen ECDSA: %w", err)
 	}
 	time.Sleep(500 * time.Millisecond)
 	// create EdDSA key
-	publicKeyEdDSA, _, err := t.keygenWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, true, partiesJoined, req.Mldsa)
+	publicKeyEdDSA, _, err := t.keygenWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, true, partiesJoined, false)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to keygen EdDSA: %w", err)
+	}
+
+	var publicKeyMldsa44 string
+	if req.Mldsa {
+		// create mldsa key
+		publicKeyMldsa, _, err := t.keygenWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, true, partiesJoined, true)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to keygen MLDsa: %w", err)
+		}
+		publicKeyMldsa44 = publicKeyMldsa
 	}
 
 	if err := relayClient.CompleteSession(req.SessionID, req.LocalPartyId); err != nil {
@@ -112,7 +122,7 @@ func (t *DKLSTssService) ProceeDKLSKeygen(req types.VaultCreateRequest) (string,
 		return publicKeyECDSA, publicKeyEdDSA, nil
 	}
 
-	err = t.backup.BackupVault(req, partiesJoined, publicKeyECDSA, publicKeyEdDSA, chainCodeECDSA, t.localStateAccessor)
+	err = t.backup.BackupVault(req, partiesJoined, publicKeyECDSA, publicKeyEdDSA, chainCodeECDSA, t.localStateAccessor, publicKeyMldsa44)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to backup vault: %w", err)
 	}
