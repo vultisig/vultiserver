@@ -197,7 +197,11 @@ func (s *WorkerService) BackupVault(req types.VaultCreateRequest,
 		ResharePrefix: "",
 	}
 	if mldsaPublicKey != "" {
-		sha256Hash := sha256.Sum256([]byte(mldsaPublicKey))
+		mldsaPublicKeyBytes, err := hex.DecodeString(mldsaPublicKey)
+		if err != nil {
+			return fmt.Errorf("failed to decode mldsa public key: %w", err)
+		}
+		sha256Hash := sha256.Sum256(mldsaPublicKeyBytes)
 		mldsaKeyID := hex.EncodeToString(sha256Hash[:])
 		mldsaKeyShare, err := localStateAccessor.GetLocalState(mldsaPublicKey)
 		if err != nil {
