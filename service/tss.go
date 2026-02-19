@@ -5,7 +5,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/md5"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -197,21 +196,15 @@ func (s *WorkerService) BackupVault(req types.VaultCreateRequest,
 		ResharePrefix: "",
 	}
 	if mldsaPublicKey != "" {
-		mldsaPublicKeyBytes, err := hex.DecodeString(mldsaPublicKey)
-		if err != nil {
-			return fmt.Errorf("failed to decode mldsa public key: %w", err)
-		}
-		sha256Hash := sha256.Sum256(mldsaPublicKeyBytes)
-		mldsaKeyID := hex.EncodeToString(sha256Hash[:])
 		mldsaKeyShare, err := localStateAccessor.GetLocalState(mldsaPublicKey)
 		if err != nil {
 			return fmt.Errorf("failed to get local sate: %w", err)
 		}
 		vault.KeyShares = append(vault.KeyShares, &vaultType.Vault_KeyShare{
-			PublicKey: mldsaKeyID,
+			PublicKey: mldsaPublicKey,
 			Keyshare:  mldsaKeyShare,
 		})
-		vault.PublicKeyMldsa44 = mldsaKeyID
+		vault.PublicKeyMldsa44 = mldsaPublicKey
 	}
 	switch req.LibType {
 	case types.DKLS:
