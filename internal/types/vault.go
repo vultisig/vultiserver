@@ -25,7 +25,6 @@ type VaultCreateRequest struct {
 	EncryptionPassword string  `json:"encryption_password" validate:"required"` // password used to encrypt the vault file
 	Email              string  `json:"email" validate:"required"`               // this is the email of the user that the vault backup will be sent to
 	LibType            LibType `json:"lib_type"`                                // this is the type of the vault
-	Mldsa              bool    `json:"mldsa"`                                   // whether to create a mldsa key or not, default it to false
 }
 
 func isValidHexString(s string) bool {
@@ -60,9 +59,6 @@ func (req *VaultCreateRequest) IsValid() error {
 	}
 	if req.Email == "" {
 		return fmt.Errorf("email is required")
-	}
-	if req.LibType == GG20 && req.Mldsa {
-		return fmt.Errorf("mldsa is not supported for gg20")
 	}
 	return nil
 }

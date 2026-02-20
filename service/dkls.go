@@ -95,16 +95,6 @@ func (t *DKLSTssService) ProceeDKLSKeygen(req types.VaultCreateRequest) (string,
 		return "", "", fmt.Errorf("failed to keygen EdDSA: %w", err)
 	}
 
-	var publicKeyMldsa44 string
-	if req.Mldsa {
-		// create mldsa key
-		publicKeyMldsa, _, err := t.keygenWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, true, partiesJoined, true)
-		if err != nil {
-			return "", "", fmt.Errorf("failed to keygen MLDsa: %w", err)
-		}
-		publicKeyMldsa44 = publicKeyMldsa
-	}
-
 	if err := relayClient.CompleteSession(req.SessionID, req.LocalPartyId); err != nil {
 		t.logger.WithFields(logrus.Fields{
 			"session": req.SessionID,
@@ -124,7 +114,7 @@ func (t *DKLSTssService) ProceeDKLSKeygen(req types.VaultCreateRequest) (string,
 		return publicKeyECDSA, publicKeyEdDSA, nil
 	}
 
-	err = t.backup.BackupVault(req, partiesJoined, publicKeyECDSA, publicKeyEdDSA, chainCodeECDSA, t.localStateAccessor, publicKeyMldsa44)
+	err = t.backup.BackupVault(req, partiesJoined, publicKeyECDSA, publicKeyEdDSA, chainCodeECDSA, t.localStateAccessor, "")
 	if err != nil {
 		return "", "", fmt.Errorf("failed to backup vault: %w", err)
 	}
