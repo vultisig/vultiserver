@@ -25,7 +25,7 @@ import (
 )
 
 type VaultOperation interface {
-	BackupVault(req types.VaultCreateRequest, partiesJoined []string, ecdsaPubkey, eddsaPubkey, hexChainCode string, localStateAccessor *relay.LocalStateAccessorImp, mldsa44PublicKey string) error
+	BackupVault(req types.VaultCreateRequest, partiesJoined []string, ecdsaPubkey, eddsaPubkey, hexChainCode string, localStateAccessor *relay.LocalStateAccessorImp) error
 	SaveVaultAndScheduleEmail(vault *vaultType.Vault, encryptionPassword, email string) error
 }
 
@@ -92,7 +92,7 @@ func (s *WorkerService) JoinKeyGeneration(req types.VaultCreateRequest) (string,
 		return "", "", fmt.Errorf("failed to check completed parties: %w", err)
 	}
 
-	err = s.BackupVault(req, partiesJoined, ecdsaPubkey, eddsaPubkey, req.HexChainCode, localStateAccessor, "")
+	err = s.BackupVault(req, partiesJoined, ecdsaPubkey, eddsaPubkey, req.HexChainCode, localStateAccessor)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to backup vault: %w", err)
 	}
@@ -163,8 +163,7 @@ func (s *WorkerService) BackupVault(req types.VaultCreateRequest,
 	partiesJoined []string,
 	ecdsaPubkey, eddsaPubkey string,
 	hexChainCode string,
-	localStateAccessor *relay.LocalStateAccessorImp,
-	mldsaPublicKey string) error {
+	localStateAccessor *relay.LocalStateAccessorImp) error {
 	ecdsaKeyShare, err := localStateAccessor.GetLocalState(ecdsaPubkey)
 	if err != nil {
 		return fmt.Errorf("failed to get local sate: %w", err)
@@ -195,17 +194,7 @@ func (s *WorkerService) BackupVault(req types.VaultCreateRequest,
 		LocalPartyId:  req.LocalPartyId,
 		ResharePrefix: "",
 	}
-	if mldsaPublicKey != "" {
-		mldsaKeyShare, err := localStateAccessor.GetLocalState(mldsaPublicKey)
-		if err != nil {
-			return fmt.Errorf("failed to get local sate: %w", err)
-		}
-		vault.KeyShares = append(vault.KeyShares, &vaultType.Vault_KeyShare{
-			PublicKey: mldsaPublicKey,
-			Keyshare:  mldsaKeyShare,
-		})
-		vault.PublicKeyMldsa44 = mldsaPublicKey
-	}
+
 	switch req.LibType {
 	case types.DKLS:
 		vault.LibType = keygen.LibType_LIB_TYPE_DKLS
