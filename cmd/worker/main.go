@@ -61,6 +61,7 @@ func main() {
 	mux.HandleFunc(tasks.TypeReshareDKLS, workerServce.HandleReshareDKLS)
 	mux.HandleFunc(tasks.TypeMigrate, workerServce.HandleMigrateDKLS)
 	mux.HandleFunc(tasks.TypeImport, workerServce.HandleImport)
+	mux.HandleFunc(tasks.TypeCreateMldsa, workerServce.HandleCreateMldsa)
 	if err := srv.Run(mux); err != nil {
 		panic(fmt.Errorf("could not run server: %w", err))
 	}

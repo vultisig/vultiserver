@@ -84,6 +84,7 @@ func (s *Server) StartServer() error {
 	grp.GET("/get/:publicKeyECDSA", s.GetVault)     // Get Vault Data
 	grp.GET("/exist/:publicKeyECDSA", s.ExistVault) // Check if Vault exists
 	//	grp.DELETE("/delete/:publicKeyECDSA", s.DeleteVault) // Delete Vault Data
+	grp.POST("/mldsa", s.CreateMldsaVault)  // Add MLDSA key to existing vault
 	grp.POST("/sign", s.SignMessages)       // Sign messages
 	grp.POST("/resend", s.ResendVaultEmail) // request server to send vault share , code through email again
 	grp.GET("/verify/:publicKeyECDSA/:code", s.VerifyCode)
@@ -275,6 +276,43 @@ func (s *Server) ImportVault(c echo.Context) error {
 
 	typeName := tasks.TypeImport
 	_, err = s.client.Enqueue(asynq.NewTask(typeName, buf),
+		asynq.MaxRetry(-1),
+		asynq.Timeout(7*time.Minute),
+		asynq.Retention(10*time.Minute),
+		asynq.Queue(tasks.QUEUE_NAME))
+	if err != nil {
+		return fmt.Errorf("fail to enqueue task, err: %w", err)
+	}
+	return c.NoContent(http.StatusOK)
+}
+
+func (s *Server) CreateMldsaVault(c echo.Context) error {
+	var req types.CreateMldsaRequest
+	if err := c.Bind(&req); err != nil {
+		return fmt.Errorf("fail to parse request, err: %w", err)
+	}
+	if err := req.IsValid(); err != nil {
+		return fmt.Errorf("invalid request, err: %w", err)
+	}
+	if !s.isValidHash(req.PublicKey) {
+		return c.NoContent(http.StatusBadRequest)
+	}
+	result, err := s.redis.Get(c.Request().Context(), req.SessionID)
+	if err == nil && result != "" {
+		return c.NoContent(http.StatusOK)
+	}
+	if err := s.redis.Set(c.Request().Context(), req.SessionID, req.SessionID, 5*time.Minute); err != nil {
+		s.logger.Errorf("fail to set session, err: %v", err)
+	}
+	exist, err := s.blockStorage.FileExist(req.PublicKey + ".bak")
+	if err != nil || !exist {
+		return fmt.Errorf("vault not found for public key: %s", req.PublicKey)
+	}
+	buf, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("fail to marshal to json, err: %w", err)
+	}
+	_, err = s.client.Enqueue(asynq.NewTask(tasks.TypeCreateMldsa, buf),
 		asynq.MaxRetry(-1),
 		asynq.Timeout(7*time.Minute),
 		asynq.Retention(10*time.Minute),

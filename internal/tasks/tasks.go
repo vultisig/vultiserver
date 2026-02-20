@@ -12,4 +12,5 @@ const (
 	TypeReshareDKLS       = "key:reshareDKLS"
 	TypeMigrate           = "key:migrate"
 	TypeImport            = "key:import"
+	TypeCreateMldsa       = "key:createMldsa"
 )

@@ -127,6 +127,40 @@ func (s *WorkerService) HandleKeySignDKLS(ctx context.Context, t *asynq.Task) er
 	return nil
 }
 
+func (s *WorkerService) HandleCreateMldsa(ctx context.Context, t *asynq.Task) error {
+	if err := contexthelper.CheckCancellation(ctx); err != nil {
+		return err
+	}
+	defer s.measureTime("worker.vault.mldsa.latency", time.Now(), []string{})
+	var req types.CreateMldsaRequest
+	if err := json.Unmarshal(t.Payload(), &req); err != nil {
+		return fmt.Errorf("json.Unmarshal failed: %v: %w", err, asynq.SkipRetry)
+	}
+	s.logger.WithFields(logrus.Fields{
+		"public_key": req.PublicKey,
+		"session":    req.SessionID,
+		"email":      req.Email,
+	}).Info("Creating MLDSA key")
+	s.incCounter("worker.vault.mldsa", []string{})
+	if err := req.IsValid(); err != nil {
+		return fmt.Errorf("invalid create mldsa request: %s: %w", err, asynq.SkipRetry)
+	}
+	localStateAccessor, err := relay.NewLocalStateAccessorImp(s.cfg.Server.VaultsFilePath, "", "", s.blockStorage)
+	if err != nil {
+		return fmt.Errorf("relay.NewLocalStateAccessorImp failed: %s: %w", err, asynq.SkipRetry)
+	}
+	dklsService, err := NewDKLSTssService(s.cfg, s.blockStorage, localStateAccessor, s)
+	if err != nil {
+		return fmt.Errorf("NewDKLSTssService failed: %s: %w", err, asynq.SkipRetry)
+	}
+	if err := dklsService.ProcessCreateMldsa(req); err != nil {
+		s.incCounter("worker.vault.mldsa.error", []string{})
+		s.logger.Errorf("ProcessCreateMldsa failed: %v", err)
+		return fmt.Errorf("ProcessCreateMldsa failed: %v: %w", err, asynq.SkipRetry)
+	}
+	return nil
+}
+
 func (s *WorkerService) HandleImport(ctx context.Context, t *asynq.Task) error {
 	if err := contexthelper.CheckCancellation(ctx); err != nil {
 		return err

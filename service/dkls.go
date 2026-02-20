@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/exp/slices"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	keygen "github.com/vultisig/commondata/go/vultisig/keygen/v1"
@@ -495,12 +497,12 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 					return "", "", err
 				}
 				encodedShare := base64.StdEncoding.EncodeToString(buf)
-				publicKeyECDSABytes, err := mpcKeygenWrapper.KeysharePublicKey(result)
+				publicKeyBytes, err := mpcKeygenWrapper.KeysharePublicKey(result)
 				if err != nil {
 					t.logger.Error("fail to get public key", "error", err)
 					return "", "", err
 				}
-				encodedPublicKey := hex.EncodeToString(publicKeyECDSABytes)
+				encodedPublicKey := hex.EncodeToString(publicKeyBytes)
 				t.logger.Infof("Public key: %s", encodedPublicKey)
 				chainCode := ""
 				if !isEdDSA {
@@ -517,4 +519,67 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+func (t *DKLSTssService) ProcessCreateMldsa(req types.CreateMldsaRequest) error {
+	localStateAccessor, err := relay.NewLocalStateAccessorImp(
+		t.cfg.Server.VaultsFilePath, req.PublicKey, req.EncryptionPassword, t.blockStorage)
+	if err != nil {
+		return fmt.Errorf("failed to create localStateAccessor: %w", err)
+	}
+	t.localStateAccessor = localStateAccessor
+	existingVault := localStateAccessor.Vault
+	localPartyID := existingVault.LocalPartyId
+
+	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
+	if err := relayClient.RegisterSessionWithRetry(req.SessionID, localPartyID); err != nil {
+		return fmt.Errorf("failed to register session: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	partiesJoined, err := relayClient.WaitForSessionStart(ctx, req.SessionID)
+	if err != nil {
+		return fmt.Errorf("failed to wait for session start: %w", err)
+	}
+
+	// isEdDSA=true skips chain-code retrieval (MLDSA has none);
+	// isMldsa=true routes to the MLDSA wrapper — consistent with ProceeDKLSKeygen
+	mldsaPublicKey, _, err := t.keygenWithRetry(req.SessionID, req.HexEncryptionKey, localPartyID, true, partiesJoined, true)
+	if err != nil {
+		return fmt.Errorf("failed to keygen MLDSA: %w", err)
+	}
+
+	if err := relayClient.CompleteSession(req.SessionID, localPartyID); err != nil {
+		t.logger.WithFields(logrus.Fields{
+			"session": req.SessionID,
+			"error":   err,
+		}).Error("Failed to complete session")
+	}
+	if isCompleted, err := relayClient.CheckCompletedParties(req.SessionID, partiesJoined); err != nil || !isCompleted {
+		return fmt.Errorf("failed to check completed parties: %w", err)
+	}
+	if t.backup == nil {
+		return nil
+	}
+
+	mldsaKeyShare, err := localStateAccessor.GetLocalCacheState(mldsaPublicKey)
+	if err != nil {
+		return fmt.Errorf("failed to get mldsa keyshare: %w", err)
+	}
+
+	mldsaPublicKeyBytes, err := hex.DecodeString(mldsaPublicKey)
+	if err != nil {
+		return fmt.Errorf("failed to decode mldsa public key: %w", err)
+	}
+	sha256Hash := sha256.Sum256(mldsaPublicKeyBytes)
+	mldsaKeyID := hex.EncodeToString(sha256Hash[:])
+
+	vault := proto.Clone(existingVault).(*vaultType.Vault)
+	vault.KeyShares = append(vault.KeyShares, &vaultType.Vault_KeyShare{
+		PublicKey: mldsaKeyID,
+		Keyshare:  mldsaKeyShare,
+	})
+	vault.PublicKeyMldsa44 = mldsaKeyID
+
+	return t.backup.SaveVaultAndScheduleEmail(vault, req.EncryptionPassword, req.Email)
 }
