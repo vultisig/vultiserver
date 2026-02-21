@@ -237,6 +237,8 @@ github.com/vultisig/go-wrappers v0.0.0-20260218034758-a206ff4ebb65 h1:elvYuct6WD
 github.com/vultisig/go-wrappers v0.0.0-20260218034758-a206ff4ebb65/go.mod h1:vEP0x0RmNlghWxfalt13FvVsBwmobSwimMhJxGfqCD4=
 github.com/vultisig/go-wrappers v0.0.0-20260218042353-74e51cdf7047 h1:QzoAWNG749hpP8XBMYEJeTuT6zV/fghGpbmknDMrVew=
 github.com/vultisig/go-wrappers v0.0.0-20260218042353-74e51cdf7047/go.mod h1:vEP0x0RmNlghWxfalt13FvVsBwmobSwimMhJxGfqCD4=
+github.com/vultisig/go-wrappers v0.0.0-20260221093517-0d0ad84436c2 h1:f4fWzlbIf8C3rZGhKbMk3ZUVVJfeYN/ynp4E88+LB64=
+github.com/vultisig/go-wrappers v0.0.0-20260221093517-0d0ad84436c2/go.mod h1:vEP0x0RmNlghWxfalt13FvVsBwmobSwimMhJxGfqCD4=
 github.com/vultisig/mobile-tss-lib v0.0.0-20250316003201-2e7e570a4a74 h1:goqwk4nQ/NEVIb3OPP9SUx7/u9ZfsUIcd5fIN/e4DVU=
 github.com/vultisig/mobile-tss-lib v0.0.0-20250316003201-2e7e570a4a74/go.mod h1:nOykk4nOy1L3yXtLSlYvVsgizBnCQ3tR2N5uwGPdvaM=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

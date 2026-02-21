@@ -10,8 +10,8 @@ import (
 
 type Handle int32
 type MPCKeygenWrapper interface {
-	KeygenSetupMsgNew(threshold int, keyID []byte, ids []byte) ([]byte, error)
-	KeygenSessionFromSetup(setup []byte, id []byte) (Handle, error)
+	KeygenSetupMsgNew(level mldsaSession.SecurityLevel, threshold int, keyID []byte, ids []byte) ([]byte, error)
+	KeygenSessionFromSetup(level mldsaSession.SecurityLevel, setup []byte, id []byte) (Handle, error)
 	KeyRefreshSessionFromSetup(setup []byte, id []byte, oldKeyshare Handle) (Handle, error)
 	KeygenSessionOutputMessage(session Handle) ([]byte, error)
 	KeygenSessionInputMessage(session Handle, message []byte) (bool, error)
@@ -21,8 +21,8 @@ type MPCKeygenWrapper interface {
 	MigrateSessionFromSetup(setup []byte, id []byte, publicKey []byte, rootChainCode []byte, secretCoefficient []byte) (Handle, error)
 }
 type MPCKeysignWrapper interface {
-	SignSetupMsgNew(keyID []byte, chainPath []byte, messageHash []byte, ids []byte) ([]byte, error)
-	SignSessionFromSetup(setup []byte, id []byte, shareOrPresign Handle) (Handle, error)
+	SignSetupMsgNew(level mldsaSession.SecurityLevel, keyID []byte, chainPath []byte, messageHash []byte, ids []byte) ([]byte, error)
+	SignSessionFromSetup(level mldsaSession.SecurityLevel, setup []byte, id []byte, shareOrPresign Handle) (Handle, error)
 	SignSessionOutputMessage(session Handle) ([]byte, error)
 	SignSessionMessageReceiver(session Handle, message []byte, index int) ([]byte, error)
 	SignSessionInputMessage(session Handle, message []byte) (bool, error)
@@ -153,9 +153,9 @@ func NewMPCWrapperImp(isEdDSA bool, isMldsa bool) *MPCWrapperImp {
 		isMldsa: isMldsa,
 	}
 }
-func (w *MPCWrapperImp) KeygenSetupMsgNew(threshold int, keyID []byte, ids []byte) ([]byte, error) {
+func (w *MPCWrapperImp) KeygenSetupMsgNew(level mldsaSession.SecurityLevel, threshold int, keyID []byte, ids []byte) ([]byte, error) {
 	if w.isMldsa {
-		return mldsaSession.MldsaKeygenSetupMsgNew(threshold, keyID, ids)
+		return mldsaSession.MldsaKeygenSetupMsgNew(level, threshold, keyID, ids)
 	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrKeygenSetupMsgNew(int32(threshold), keyID, ids)
@@ -163,9 +163,9 @@ func (w *MPCWrapperImp) KeygenSetupMsgNew(threshold int, keyID []byte, ids []byt
 	return session.DklsKeygenSetupMsgNew(threshold, keyID, ids)
 }
 
-func (w *MPCWrapperImp) KeygenSessionFromSetup(setup []byte, id []byte) (Handle, error) {
+func (w *MPCWrapperImp) KeygenSessionFromSetup(level mldsaSession.SecurityLevel, setup []byte, id []byte) (Handle, error) {
 	if w.isMldsa {
-		h, err := mldsaSession.MldsaKeygenSessionFromSetup(setup, id)
+		h, err := mldsaSession.MldsaKeygenSessionFromSetup(level, setup, id)
 		return Handle(h), err
 	}
 	if w.isEdDSA {
@@ -250,9 +250,9 @@ func (w *MPCWrapperImp) MigrateSessionFromSetup(setup []byte, id []byte, publicK
 	h, err := session.DklsKeyMigrateSessionFromSetup(setup, id, publicKey, rootChainCode, secretCoefficient)
 	return Handle(h), err
 }
-func (w *MPCWrapperImp) SignSetupMsgNew(keyID []byte, chainPath []byte, messageHash []byte, ids []byte) ([]byte, error) {
+func (w *MPCWrapperImp) SignSetupMsgNew(level mldsaSession.SecurityLevel, keyID []byte, chainPath []byte, messageHash []byte, ids []byte) ([]byte, error) {
 	if w.isMldsa {
-		return mldsaSession.MldsaSignSetupMsgNew(keyID, string(chainPath), messageHash, ids)
+		return mldsaSession.MldsaSignSetupMsgNew(level, keyID, string(chainPath), messageHash, ids)
 	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrSignSetupMsgNew(keyID, chainPath, messageHash, ids)
@@ -260,9 +260,9 @@ func (w *MPCWrapperImp) SignSetupMsgNew(keyID []byte, chainPath []byte, messageH
 	return session.DklsSignSetupMsgNew(keyID, chainPath, messageHash, ids)
 }
 
-func (w *MPCWrapperImp) SignSessionFromSetup(setup []byte, id []byte, shareOrPresign Handle) (Handle, error) {
+func (w *MPCWrapperImp) SignSessionFromSetup(level mldsaSession.SecurityLevel, setup []byte, id []byte, shareOrPresign Handle) (Handle, error) {
 	if w.isMldsa {
-		h, err := mldsaSession.MldsaSignSessionFromSetup(setup, id, mldsaSession.Handle(shareOrPresign))
+		h, err := mldsaSession.MldsaSignSessionFromSetup(level, setup, id, mldsaSession.Handle(shareOrPresign))
 		return Handle(h), err
 	}
 	if w.isEdDSA {
@@ -416,7 +416,7 @@ func (w *MPCWrapperImp) KeyshareChainCode(share Handle) ([]byte, error) {
 }
 func (w *MPCWrapperImp) DecodeKeyID(setup []byte) ([]byte, error) {
 	if w.isMldsa {
-		return nil, fmt.Errorf("not implemented")
+		return mldsaSession.MldsaDecodeKeyID(setup)
 	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrDecodeKeyID(setup)
@@ -435,7 +435,7 @@ func (w *MPCWrapperImp) DecodeSessionID(setup []byte) ([]byte, error) {
 }
 func (w *MPCWrapperImp) DecodeMessage(setup []byte) ([]byte, error) {
 	if w.isMldsa {
-		return nil, fmt.Errorf("not implemented")
+		return mldsaSession.MldsaDecodeMessage(setup)
 	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrDecodeMessage(setup)
@@ -444,7 +444,7 @@ func (w *MPCWrapperImp) DecodeMessage(setup []byte) ([]byte, error) {
 }
 func (w *MPCWrapperImp) DecodePartyName(setup []byte, index int) ([]byte, error) {
 	if w.isMldsa {
-		return nil, fmt.Errorf("not implemented")
+		return mldsaSession.MldsaDecodePartyName(setup, index)
 	}
 	if w.isEdDSA {
 		return eddsaSession.SchnorrDecodePartyName(setup, index)

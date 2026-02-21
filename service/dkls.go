@@ -18,6 +18,7 @@ import (
 
 	keygen "github.com/vultisig/commondata/go/vultisig/keygen/v1"
 	vaultType "github.com/vultisig/commondata/go/vultisig/vault/v1"
+	mldsaSession "github.com/vultisig/go-wrappers/mldsa"
 	"github.com/vultisig/vultiserver/config"
 	"github.com/vultisig/vultiserver/internal/types"
 	"github.com/vultisig/vultiserver/relay"
@@ -84,13 +85,13 @@ func (t *DKLSTssService) ProceeDKLSKeygen(req types.VaultCreateRequest) (string,
 		return "", "", fmt.Errorf("failed to wait for session start: %w", err)
 	}
 	// create ECDSA key
-	publicKeyECDSA, chainCodeECDSA, err := t.keygenWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, false, partiesJoined, false)
+	publicKeyECDSA, chainCodeECDSA, err := t.keygenWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, false, partiesJoined, false, mldsaSession.MlDsa44)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to keygen ECDSA: %w", err)
 	}
 	time.Sleep(500 * time.Millisecond)
 	// create EdDSA key
-	publicKeyEdDSA, _, err := t.keygenWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, true, partiesJoined, false)
+	publicKeyEdDSA, _, err := t.keygenWithRetry(req.SessionID, req.HexEncryptionKey, req.LocalPartyId, true, partiesJoined, false, mldsaSession.MlDsa44)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to keygen EdDSA: %w", err)
 	}
@@ -316,9 +317,9 @@ func (t *DKLSTssService) keygenWithRetry(sessionID string,
 	localPartyID string,
 	isEdDSA bool,
 	keygenCommittee []string,
-	isMldsa bool) (string, string, error) {
+	isMldsa bool, level mldsaSession.SecurityLevel) (string, string, error) {
 	for i := 0; i < 3; i++ {
-		publicKey, chainCode, err := t.keygen(sessionID, hexEncryptionKey, localPartyID, isEdDSA, keygenCommittee, i, isMldsa)
+		publicKey, chainCode, err := t.keygen(sessionID, hexEncryptionKey, localPartyID, isEdDSA, keygenCommittee, i, isMldsa, level)
 		if err != nil {
 			t.logger.WithFields(logrus.Fields{
 				"session_id":       sessionID,
@@ -341,7 +342,8 @@ func (t *DKLSTssService) keygen(sessionID string,
 	isEdDSA bool,
 	keygenCommittee []string,
 	attempt int,
-	isMldsa bool) (string, string, error) {
+	isMldsa bool,
+	level mldsaSession.SecurityLevel) (string, string, error) {
 	t.logger.WithFields(logrus.Fields{
 		"session_id":       sessionID,
 		"local_party_id":   localPartyID,
@@ -362,7 +364,7 @@ func (t *DKLSTssService) keygen(sessionID string,
 		return "", "", fmt.Errorf("failed to decode setup message: %w", err)
 	}
 
-	handle, err := mpcKeygenWrapper.KeygenSessionFromSetup(setupMessageBytes, []byte(localPartyID))
+	handle, err := mpcKeygenWrapper.KeygenSessionFromSetup(level, setupMessageBytes, []byte(localPartyID))
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create session from setup message: %w", err)
 	}
@@ -534,7 +536,7 @@ func (t *DKLSTssService) ProcessCreateMldsa(req types.CreateMldsaRequest) error 
 
 	// isEdDSA=true skips chain-code retrieval (MLDSA has none);
 	// isMldsa=true routes to the MLDSA wrapper — consistent with ProceeDKLSKeygen
-	mldsaPublicKey, _, err := t.keygenWithRetry(req.SessionID, req.HexEncryptionKey, localPartyID, true, partiesJoined, true)
+	mldsaPublicKey, _, err := t.keygenWithRetry(req.SessionID, req.HexEncryptionKey, localPartyID, true, partiesJoined, true, mldsaSession.MlDsa44)
 	if err != nil {
 		return fmt.Errorf("failed to keygen MLDSA: %w", err)
 	}

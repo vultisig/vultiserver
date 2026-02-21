@@ -17,6 +17,7 @@ import (
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/sirupsen/logrus"
 	v1 "github.com/vultisig/commondata/go/vultisig/keygen/v1"
+	mldsaSession "github.com/vultisig/go-wrappers/mldsa"
 	"github.com/vultisig/mobile-tss-lib/tss"
 
 	"github.com/vultisig/vultiserver/common"
@@ -76,7 +77,7 @@ func (t *DKLSTssService) ProcessDKLSKeysign(req types.KeysignRequest) (map[strin
 	}
 	// start to do keysign
 	for _, msg := range req.Messages {
-		sig, err := t.keysignWithRetry(req.SessionID, req.HexEncryptionKey, publicKey, !req.IsECDSA, msg, req.DerivePath, localPartyID, partiesJoined, req.Mldsa)
+		sig, err := t.keysignWithRetry(req.SessionID, req.HexEncryptionKey, publicKey, !req.IsECDSA, msg, req.DerivePath, localPartyID, partiesJoined, req.Mldsa, mldsaSession.MlDsa44)
 		if err != nil {
 			return result, fmt.Errorf("failed to keysign: %w", err)
 		}
@@ -102,7 +103,7 @@ func (t *DKLSTssService) keysignWithRetry(sessionID string,
 	derivePath string,
 	localPartyID string,
 	keysignCommittee []string,
-	isMldsa bool) (*tss.KeysignResponse, error) {
+	isMldsa bool, level mldsaSession.SecurityLevel) (*tss.KeysignResponse, error) {
 	for i := range 3 {
 		keysignResult, err := t.keysign(sessionID,
 			hexEncryptionKey,
@@ -111,7 +112,7 @@ func (t *DKLSTssService) keysignWithRetry(sessionID string,
 			message,
 			derivePath,
 			localPartyID,
-			keysignCommittee, i, isMldsa)
+			keysignCommittee, i, isMldsa, level)
 		if err != nil {
 			t.logger.WithFields(logrus.Fields{
 				"session_id":        sessionID,
@@ -140,7 +141,7 @@ func (t *DKLSTssService) keysign(sessionID string,
 	localPartyID string,
 	keysignCommittee []string,
 	attempt int,
-	isMldsa bool) (*tss.KeysignResponse, error) {
+	isMldsa bool, level mldsaSession.SecurityLevel) (*tss.KeysignResponse, error) {
 	if publicKey == "" {
 		return nil, fmt.Errorf("public key is empty")
 	}
@@ -211,7 +212,7 @@ func (t *DKLSTssService) keysign(sessionID string,
 	if !bytes.Equal(messageHashInSetupMsg, msgRawBytes) {
 		return nil, fmt.Errorf("message hash in setup message is not equal to the message, stop keysign")
 	}
-	sessionHandle, err := mpcWrapper.SignSessionFromSetup(setupMessageBytes, []byte(localPartyID), keyshareHandle)
+	sessionHandle, err := mpcWrapper.SignSessionFromSetup(level, setupMessageBytes, []byte(localPartyID), keyshareHandle)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session from setup message: %w", err)
 	}
