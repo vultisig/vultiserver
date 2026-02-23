@@ -233,6 +233,8 @@ github.com/vultisig/go-wrappers v0.0.0-20250403041248-86911e8aa33f h1:124Xlloih1
 github.com/vultisig/go-wrappers v0.0.0-20250403041248-86911e8aa33f/go.mod h1:UfGCxUQW08kiwxyNBiHwXe+ePPuBmHVVS+BS51aU/Jg=
 github.com/vultisig/go-wrappers v0.0.0-20251102212601-90c65d7dbeda h1:XpT6GXCZdP3xj7rEyG4rvpLaOkdptsvOy1X0AUbnUpI=
 github.com/vultisig/go-wrappers v0.0.0-20251102212601-90c65d7dbeda/go.mod h1:vEP0x0RmNlghWxfalt13FvVsBwmobSwimMhJxGfqCD4=
+github.com/vultisig/go-wrappers v0.0.0-20260125075817-2a3014f6f10e h1:LBW/dpGcOjoyMxx9KjkmOvIN5MVpOtJcEyBaNqzeQ54=
+github.com/vultisig/go-wrappers v0.0.0-20260125075817-2a3014f6f10e/go.mod h1:vEP0x0RmNlghWxfalt13FvVsBwmobSwimMhJxGfqCD4=
 github.com/vultisig/go-wrappers v0.0.0-20260218034758-a206ff4ebb65 h1:elvYuct6WD7nhBri7L80sLPvJAQ2ZR7fGN17zAwUcUc=
 github.com/vultisig/go-wrappers v0.0.0-20260218034758-a206ff4ebb65/go.mod h1:vEP0x0RmNlghWxfalt13FvVsBwmobSwimMhJxGfqCD4=
 github.com/vultisig/go-wrappers v0.0.0-20260218042353-74e51cdf7047 h1:QzoAWNG749hpP8XBMYEJeTuT6zV/fghGpbmknDMrVew=
