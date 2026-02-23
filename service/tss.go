@@ -194,6 +194,7 @@ func (s *WorkerService) BackupVault(req types.VaultCreateRequest,
 		LocalPartyId:  req.LocalPartyId,
 		ResharePrefix: "",
 	}
+
 	switch req.LibType {
 	case types.DKLS:
 		vault.LibType = keygen.LibType_LIB_TYPE_DKLS

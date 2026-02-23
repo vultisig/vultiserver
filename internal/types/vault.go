@@ -63,6 +63,40 @@ func (req *VaultCreateRequest) IsValid() error {
 	return nil
 }
 
+// CreateMldsaRequest is a request to add an MLDSA key to an existing vault.
+type CreateMldsaRequest struct {
+	PublicKey          string `json:"public_key"`          // ECDSA public key identifying the vault
+	SessionID          string `json:"session_id"`          // UUID session ID for the keygen protocol
+	HexEncryptionKey   string `json:"hex_encryption_key"`  // 32-byte hex key for encrypting keygen messages
+	EncryptionPassword string `json:"encryption_password"` // password to decrypt the vault file
+	Email              string `json:"email"`               // email address to receive the updated vault backup
+}
+
+func (req *CreateMldsaRequest) IsValid() error {
+	if req.PublicKey == "" {
+		return fmt.Errorf("public_key is required")
+	}
+	if req.SessionID == "" {
+		return fmt.Errorf("session_id is required")
+	}
+	if _, err := uuid.Parse(req.SessionID); err != nil {
+		return fmt.Errorf("session_id is not valid")
+	}
+	if req.HexEncryptionKey == "" {
+		return fmt.Errorf("hex_encryption_key is required")
+	}
+	if !isValidHexString(req.HexEncryptionKey) {
+		return fmt.Errorf("hex_encryption_key is not valid")
+	}
+	if req.EncryptionPassword == "" {
+		return fmt.Errorf("encryption_password is required")
+	}
+	if req.Email == "" {
+		return fmt.Errorf("email is required")
+	}
+	return nil
+}
+
 // VaultCreateResponse is a struct that represents a response to create a new vault
 // integration partner need to use this information to construct a QR Code , so vultisig device can participate in the vault creation process.
 type VaultCreateResponse struct {
