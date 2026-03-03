@@ -13,7 +13,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.18.2
 	github.com/vultisig/commondata v0.0.0-20260219231400-ffe4acc6c69a
-	github.com/vultisig/frost-zm/go v0.0.1
+	github.com/vultisig/frost-zm/go v0.0.2
 	github.com/vultisig/go-wrappers v0.0.0-20260223034715-9a5927a3c4c6
 	github.com/vultisig/mobile-tss-lib v0.0.0-20250316003201-2e7e570a4a74
 	google.golang.org/protobuf v1.35.1
