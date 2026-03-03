@@ -13,5 +13,5 @@ const (
 	TypeMigrate           = "key:migrate"
 	TypeImport            = "key:import"
 	TypeCreateMldsa       = "key:createMldsa"
-	TypeKeygenParallel    = "key:keygenParallel"
+	TypeKeygenBatch       = "key:keygenBatch"
 )

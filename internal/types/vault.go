@@ -97,13 +97,15 @@ func (req *CreateMldsaRequest) IsValid() error {
 	return nil
 }
 
-type ParallelVaultCreateRequest struct {
+type BatchVaultRequest struct {
 	VaultCreateRequest
 	Protocols []string `json:"protocols"`
+	PublicKey string   `json:"public_key,omitempty"`
 }
 
-func (req *ParallelVaultCreateRequest) IsValid() error {
-	if err := req.VaultCreateRequest.IsValid(); err != nil {
+func (req *BatchVaultRequest) IsValid() error {
+	err := req.VaultCreateRequest.IsValid()
+	if err != nil {
 		return err
 	}
 	if len(req.Protocols) == 0 {

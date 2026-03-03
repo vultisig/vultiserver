@@ -24,6 +24,7 @@ type PhaseResult struct {
 type KeygenPhaseStatus struct {
 	Name      string `json:"name"`
 	Success   bool   `json:"success"`
+	Skipped   bool   `json:"skipped,omitempty"`
 	PublicKey string `json:"public_key,omitempty"`
 	Error     string `json:"error,omitempty"`
 }

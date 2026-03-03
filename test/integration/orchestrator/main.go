@@ -200,14 +200,14 @@ func postParallelKeygen(serverURL, sessionID, hexEncryptionKey, localPartyID str
 		"protocols":           protocols,
 	}
 	body, _ := json.Marshal(reqBody)
-	resp, err := http.Post(serverURL+"/vault/parallel", "application/json", bytes.NewReader(body))
+	resp, err := http.Post(serverURL+"/vault/batch", "application/json", bytes.NewReader(body))
 	if err != nil {
 		fmt.Printf("POST to %s failed: %v\n", serverURL, err)
 		return
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
-	fmt.Printf("POST %s/vault/parallel → %d %s\n", serverURL, resp.StatusCode, string(respBody))
+	fmt.Printf("POST %s/vault/batch → %d %s\n", serverURL, resp.StatusCode, string(respBody))
 }
 
 func sendFroztMetadata(relayURL, sessionID, hexEncryptionKey string, parties []string) {

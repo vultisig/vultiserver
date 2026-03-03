@@ -84,7 +84,7 @@ func (s *Server) StartServer() error {
 	grp.GET("/get/:publicKeyECDSA", s.GetVault)     // Get Vault Data
 	grp.GET("/exist/:publicKeyECDSA", s.ExistVault) // Check if Vault exists
 	//	grp.DELETE("/delete/:publicKeyECDSA", s.DeleteVault) // Delete Vault Data
-	grp.POST("/parallel", s.CreateVaultParallel)
+	grp.POST("/batch", s.CreateVaultBatch)
 	grp.POST("/mldsa", s.CreateMldsaVault)  // Add MLDSA key to existing vault
 	grp.POST("/sign", s.SignMessages)       // Sign messages
 	grp.POST("/resend", s.ResendVaultEmail) // request server to send vault share , code through email again
@@ -180,8 +180,8 @@ func (s *Server) CreateVault(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-func (s *Server) CreateVaultParallel(c echo.Context) error {
-	var req types.ParallelVaultCreateRequest
+func (s *Server) CreateVaultBatch(c echo.Context) error {
+	var req types.BatchVaultRequest
 	bindErr := c.Bind(&req)
 	if bindErr != nil {
 		return fmt.Errorf("fail to parse request, err: %w", bindErr)
@@ -209,7 +209,7 @@ func (s *Server) CreateVaultParallel(c echo.Context) error {
 		s.logger.Errorf("fail to set session, err: %v", setErr)
 	}
 
-	_, err = s.client.Enqueue(asynq.NewTask(tasks.TypeKeygenParallel, buf),
+	_, err = s.client.Enqueue(asynq.NewTask(tasks.TypeKeygenBatch, buf),
 		asynq.MaxRetry(-1),
 		asynq.Timeout(7*time.Minute),
 		asynq.Retention(10*time.Minute),

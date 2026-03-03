@@ -161,13 +161,13 @@ func (s *WorkerService) HandleCreateMldsa(ctx context.Context, t *asynq.Task) er
 	return nil
 }
 
-func (s *WorkerService) HandleKeyGenerationDKLSParallel(ctx context.Context, t *asynq.Task) error {
+func (s *WorkerService) HandleKeygenBatch(ctx context.Context, t *asynq.Task) error {
 	cancelErr := contexthelper.CheckCancellation(ctx)
 	if cancelErr != nil {
 		return cancelErr
 	}
-	defer s.measureTime("worker.vault.create.parallel.latency", time.Now(), []string{})
-	var req types.ParallelVaultCreateRequest
+	defer s.measureTime("worker.vault.keygen.batch.latency", time.Now(), []string{})
+	var req types.BatchVaultRequest
 	unmarshalErr := json.Unmarshal(t.Payload(), &req)
 	if unmarshalErr != nil {
 		return fmt.Errorf("json.Unmarshal failed: %v: %w", unmarshalErr, asynq.SkipRetry)
@@ -178,7 +178,7 @@ func (s *WorkerService) HandleKeyGenerationDKLSParallel(ctx context.Context, t *
 		"local_party_id": req.LocalPartyId,
 		"protocols":      req.Protocols,
 	}).Info("Joining parallel keygen")
-	s.incCounter("worker.vault.create.parallel", []string{})
+	s.incCounter("worker.vault.keygen.batch", []string{})
 	validErr := req.IsValid()
 	if validErr != nil {
 		return fmt.Errorf("invalid request: %s: %w", validErr, asynq.SkipRetry)
@@ -191,9 +191,9 @@ func (s *WorkerService) HandleKeyGenerationDKLSParallel(ctx context.Context, t *
 	if err != nil {
 		return fmt.Errorf("NewDKLSTssService failed: %s: %w", err, asynq.SkipRetry)
 	}
-	result, err := dklsService.ProceeDKLSKeygenParallel(req.VaultCreateRequest, req.Protocols)
+	result, err := dklsService.ProcessBatchKeygen(req)
 	if err != nil {
-		s.incCounter("worker.vault.create.parallel.error", []string{})
+		s.incCounter("worker.vault.keygen.batch.error", []string{})
 		s.logger.Errorf("parallel keygen failed: %v", err)
 		return fmt.Errorf("parallel keygen failed: %v: %w", err, asynq.SkipRetry)
 	}
