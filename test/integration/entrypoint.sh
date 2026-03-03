@@ -9,6 +9,10 @@ sed -i "s|VAULTS_PATH_PLACEHOLDER|${VAULTS_PATH:-/data/vaults}|g" /app/config.ya
 ./worker &
 WORKER_PID=$!
 
-./api
+cleanup() {
+  kill "$WORKER_PID" 2>/dev/null || true
+  wait "$WORKER_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
 
-kill $WORKER_PID 2>/dev/null || true
+./api

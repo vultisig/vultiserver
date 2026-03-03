@@ -295,7 +295,11 @@ func test5_FullBatch() bool {
 			fmt.Printf("  FAIL: %s should have succeeded: %s\n", phase.Name, phase.Error)
 			ok = false
 		} else {
-			fmt.Printf("  OK: %s succeeded (pk: %s...)\n", phase.Name, phase.PublicKey[:16])
+			pk := phase.PublicKey
+			if len(pk) > 16 {
+				pk = pk[:16]
+			}
+			fmt.Printf("  OK: %s succeeded (pk: %s...)\n", phase.Name, pk)
 		}
 	}
 

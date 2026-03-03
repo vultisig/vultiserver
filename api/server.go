@@ -200,14 +200,9 @@ func (s *Server) CreateVaultBatch(c echo.Context) error {
 		s.logger.Errorf("fail to count metric, err: %v", metricErr)
 	}
 
-	result, err := s.redis.Get(c.Request().Context(), req.SessionID)
-	if err == nil && result != "" {
-		return c.NoContent(http.StatusOK)
-	}
-
-	setErr := s.redis.Set(c.Request().Context(), req.SessionID, req.SessionID, 5*time.Minute)
-	if setErr != nil {
-		s.logger.Errorf("fail to set session, err: %v", setErr)
+	cached, err := s.redis.Get(c.Request().Context(), req.SessionID)
+	if err == nil && cached != "" {
+		return c.JSON(http.StatusOK, map[string]string{"task_id": cached})
 	}
 
 	taskInfo, err := s.client.Enqueue(asynq.NewTask(tasks.TypeKeygenBatch, buf),
@@ -218,6 +213,11 @@ func (s *Server) CreateVaultBatch(c echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("fail to enqueue task, err: %w", err)
 	}
+
+	setErr := s.redis.Set(c.Request().Context(), req.SessionID, taskInfo.ID, 5*time.Minute)
+	if setErr != nil {
+		s.logger.Errorf("fail to cache task id, err: %v", setErr)
+	}
 	return c.JSON(http.StatusOK, map[string]string{"task_id": taskInfo.ID})
 }
 
@@ -225,15 +225,17 @@ func (s *Server) GetTaskResult(c echo.Context) error {
 	taskID := c.Param("taskID")
 	info, err := s.inspector.GetTaskInfo(tasks.QUEUE_NAME, taskID)
 	if err != nil {
+		s.logger.WithField("task_id", taskID).Warnf("task lookup failed: %v", err)
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "task not found"})
 	}
 	if info.State == asynq.TaskStateCompleted {
 		return c.JSONBlob(http.StatusOK, info.Result)
 	}
 	if info.State == asynq.TaskStateArchived {
+		s.logger.WithField("task_id", taskID).Errorf("task failed: %s", info.LastErr)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"state": "failed",
-			"error": info.LastErr,
+			"error": "task failed",
 		})
 	}
 	return c.JSON(http.StatusAccepted, map[string]string{
