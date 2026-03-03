@@ -1,0 +1,79 @@
+services:
+  redis-relay:
+    image: redis:7-alpine
+    command: redis-server --requirepass vultisig
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "vultisig", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+
+  redis-vultiserver:
+    image: redis:7-alpine
+    command: redis-server --requirepass vultisig
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "vultisig", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+
+  relay:
+    build:
+      context: ../../../vultisig-relay
+      dockerfile: Dockerfile
+    depends_on:
+      redis-relay:
+        condition: service_healthy
+    volumes:
+      - ./relay-config.json:/app/config.json:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  vultiserver1:
+    build:
+      context: ../../..
+      dockerfile: vultiserver/test/integration/Dockerfile
+    depends_on:
+      redis-vultiserver:
+        condition: service_healthy
+      relay:
+        condition: service_healthy
+    environment:
+      - VAULTS_PATH=/data/vaults1
+    volumes:
+      - vaults1:/data/vaults1
+
+  vultiserver2:
+    build:
+      context: ../../..
+      dockerfile: vultiserver/test/integration/Dockerfile
+    depends_on:
+      redis-vultiserver:
+        condition: service_healthy
+      relay:
+        condition: service_healthy
+    environment:
+      - VAULTS_PATH=/data/vaults2
+    volumes:
+      - vaults2:/data/vaults2
+
+  orchestrator:
+    build:
+      context: ../../..
+      dockerfile: vultiserver/test/integration/Dockerfile.orchestrator
+    depends_on:
+      vultiserver1:
+        condition: service_started
+      vultiserver2:
+        condition: service_started
+    environment:
+      - RELAY_URL=http://relay:8080
+      - SERVER1_URL=http://vultiserver1:8080
+      - SERVER2_URL=http://vultiserver2:8080
+
+volumes:
+  vaults1:
+  vaults2:

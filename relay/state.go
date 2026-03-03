@@ -3,6 +3,7 @@ package relay
 import (
 	"fmt"
 	"os"
+	"sync"
 
 	vaultType "github.com/vultisig/commondata/go/vultisig/vault/v1"
 
@@ -13,7 +14,7 @@ import (
 type LocalStateAccessorImp struct {
 	Folder       string
 	Vault        *vaultType.Vault
-	cache        map[string]string
+	cache        sync.Map
 	blockStorage *storage.BlockStorage
 }
 
@@ -22,7 +23,6 @@ func NewLocalStateAccessorImp(folder, vaultFileName, vaultPasswd string,
 	localStateAccessor := &LocalStateAccessorImp{
 		Folder:       folder,
 		Vault:        nil,
-		cache:        make(map[string]string),
 		blockStorage: storage,
 	}
 
@@ -57,14 +57,22 @@ func (l *LocalStateAccessorImp) GetLocalState(pubKey string) (string, error) {
 		}
 		return "", fmt.Errorf("%s keyshare does not exist", pubKey)
 	}
-	return l.cache[pubKey], nil
+	val, ok := l.cache.Load(pubKey)
+	if !ok {
+		return "", nil
+	}
+	return val.(string), nil
 }
 
 func (l *LocalStateAccessorImp) SaveLocalState(pubKey, localState string) error {
-	l.cache[pubKey] = localState
+	l.cache.Store(pubKey, localState)
 	return nil
 }
 
 func (l *LocalStateAccessorImp) GetLocalCacheState(pubKey string) (string, error) {
-	return l.cache[pubKey], nil
+	val, ok := l.cache.Load(pubKey)
+	if !ok {
+		return "", nil
+	}
+	return val.(string), nil
 }
