@@ -43,7 +43,7 @@ func main() {
 	waitForHealth(relayURL+"/ping", 30*time.Second)
 	waitForHealth(server1URL+"/ping", 30*time.Second)
 	waitForHealth(server2URL+"/ping", 30*time.Second)
-	fmt.Println("All services healthy\n")
+	fmt.Println("All services healthy")
 
 	passed := 0
 	failed := 0
