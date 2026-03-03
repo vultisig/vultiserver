@@ -3,6 +3,9 @@ set -e
 
 mkdir -p "${VAULTS_PATH:-/data/vaults}"
 
+sed -i "s/REDIS_HOST_PLACEHOLDER/${REDIS_HOST:-redis}/g" /app/config.yaml
+sed -i "s|VAULTS_PATH_PLACEHOLDER|${VAULTS_PATH:-/data/vaults}|g" /app/config.yaml
+
 ./worker &
 WORKER_PID=$!
 

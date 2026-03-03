@@ -129,7 +129,13 @@ func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*Keyge
 	if t.backup != nil && hasAnySuccess(result) {
 		backupErr := t.saveVault(req, partiesJoined, existingVault, result)
 		if backupErr != nil {
-			return result, fmt.Errorf("failed to backup vault: %w", backupErr)
+			if !isAppend {
+				return nil, fmt.Errorf("failed to store new vault: %w", backupErr)
+			}
+			t.logger.WithFields(logrus.Fields{
+				"error": backupErr,
+			}).Warn("failed to store appended vault, existing vault is intact")
+			return result, fmt.Errorf("vault append storage failed: %w", backupErr)
 		}
 	}
 

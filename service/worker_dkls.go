@@ -191,22 +191,24 @@ func (s *WorkerService) HandleKeygenBatch(ctx context.Context, t *asynq.Task) er
 	if err != nil {
 		return fmt.Errorf("NewDKLSTssService failed: %s: %w", err, asynq.SkipRetry)
 	}
-	result, err := dklsService.ProcessBatchKeygen(req)
-	if err != nil {
+	result, keygenErr := dklsService.ProcessBatchKeygen(req)
+	if keygenErr != nil {
 		s.incCounter("worker.vault.keygen.batch.error", []string{})
-		s.logger.Errorf("parallel keygen failed: %v", err)
-		return fmt.Errorf("parallel keygen failed: %v: %w", err, asynq.SkipRetry)
+		s.logger.Errorf("batch keygen failed: %v", keygenErr)
+		if result == nil {
+			return fmt.Errorf("batch keygen failed: %v: %w", keygenErr, asynq.SkipRetry)
+		}
 	}
 
 	s.logger.WithFields(logrus.Fields{
 		"keyECDSA": result.ECDSAPublicKey,
 		"keyEDDSA": result.EDDSAPublicKey,
 		"phases":   result.Phases,
-	}).Info("parallel keygen completed")
+	}).Info("batch keygen completed")
 
-	resultBytes, err := json.Marshal(result)
-	if err != nil {
-		return fmt.Errorf("json.Marshal failed: %v: %w", err, asynq.SkipRetry)
+	resultBytes, marshalErr := json.Marshal(result)
+	if marshalErr != nil {
+		return fmt.Errorf("json.Marshal failed: %v: %w", marshalErr, asynq.SkipRetry)
 	}
 	_, writeErr := t.ResultWriter().Write(resultBytes)
 	if writeErr != nil {
