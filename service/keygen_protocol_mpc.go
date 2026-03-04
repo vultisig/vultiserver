@@ -11,7 +11,6 @@ import (
 type MPCKeygenProtocol struct {
 	name      string
 	msgID     string
-	required  bool
 	isEdDSA   bool
 	isMldsa   bool
 	handle    Handle
@@ -24,7 +23,6 @@ type MPCKeygenProtocol struct {
 
 func NewMPCKeygenProtocol(
 	name, messageID string,
-	required bool,
 	setupMsg []byte,
 	localPartyID string,
 	isEdDSA, isMldsa bool,
@@ -35,19 +33,17 @@ func NewMPCKeygenProtocol(
 		return nil, fmt.Errorf("failed to create %s session: %w", name, err)
 	}
 	return &MPCKeygenProtocol{
-		name:     name,
-		msgID:    messageID,
-		required: required,
-		isEdDSA:  isEdDSA,
-		isMldsa:  isMldsa,
-		handle:   handle,
-		wrapper:  wrapper,
+		name:    name,
+		msgID:   messageID,
+		isEdDSA: isEdDSA,
+		isMldsa: isMldsa,
+		handle:  handle,
+		wrapper: wrapper,
 	}, nil
 }
 
 func (p *MPCKeygenProtocol) Name() string      { return p.name }
 func (p *MPCKeygenProtocol) MessageID() string  { return p.msgID }
-func (p *MPCKeygenProtocol) Required() bool     { return p.required }
 func (p *MPCKeygenProtocol) IsFinished() bool   { return p.finished }
 
 func (p *MPCKeygenProtocol) DrainOutbound(parties []string) ([]OutboundMsg, error) {

@@ -200,7 +200,8 @@ func (s *Server) CreateVaultBatch(c echo.Context) error {
 		s.logger.Errorf("fail to count metric, err: %v", metricErr)
 	}
 
-	cached, err := s.redis.Get(c.Request().Context(), req.SessionID)
+	cacheKey := "vault:batch:" + req.SessionID
+	cached, err := s.redis.Get(c.Request().Context(), cacheKey)
 	if err == nil && cached != "" {
 		return c.JSON(http.StatusOK, map[string]string{"task_id": cached})
 	}
@@ -214,7 +215,7 @@ func (s *Server) CreateVaultBatch(c echo.Context) error {
 		return fmt.Errorf("fail to enqueue task, err: %w", err)
 	}
 
-	setErr := s.redis.Set(c.Request().Context(), req.SessionID, taskInfo.ID, 5*time.Minute)
+	setErr := s.redis.Set(c.Request().Context(), cacheKey, taskInfo.ID, 5*time.Minute)
 	if setErr != nil {
 		s.logger.Errorf("fail to cache task id, err: %v", setErr)
 	}

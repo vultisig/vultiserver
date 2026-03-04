@@ -18,7 +18,7 @@ type OutboundMsg struct {
 }
 
 type PhaseResult struct {
-	PublicKey string
+	PublicKey  string
 	ChainCode string
 	Keyshare  string
 }
@@ -26,20 +26,18 @@ type PhaseResult struct {
 type MockProtocol struct {
 	name          string
 	msgID         string
-	required      bool
 	finished      bool
 	roundsNeeded  int
 	roundsDone    int
 	shouldFail    bool
 	outboundReady bool
-	inboundQueue  [][]byte
+	failedErr     error
 }
 
-func NewMockProtocol(name, msgID string, required bool, roundsNeeded int, shouldFail bool) *MockProtocol {
+func NewMockProtocol(name, msgID string, roundsNeeded int, shouldFail bool) *MockProtocol {
 	return &MockProtocol{
 		name:          name,
 		msgID:         msgID,
-		required:      required,
 		roundsNeeded:  roundsNeeded,
 		shouldFail:    shouldFail,
 		outboundReady: true,
@@ -48,7 +46,6 @@ func NewMockProtocol(name, msgID string, required bool, roundsNeeded int, should
 
 func (p *MockProtocol) Name() string     { return p.name }
 func (p *MockProtocol) MessageID() string { return p.msgID }
-func (p *MockProtocol) Required() bool    { return p.required }
 func (p *MockProtocol) IsFinished() bool  { return p.finished }
 
 func (p *MockProtocol) DrainOutbound(_ []string) ([]OutboundMsg, error) {
@@ -56,12 +53,14 @@ func (p *MockProtocol) DrainOutbound(_ []string) ([]OutboundMsg, error) {
 		return nil, nil
 	}
 	p.outboundReady = false
-	return []OutboundMsg{{To: "peer", Body: []byte(fmt.Sprintf("%s-round%d", p.name, p.roundsDone+1))}}, nil
+	return []OutboundMsg{{To: "peer", Body: fmt.Appendf(nil, "%s-round%d", p.name, p.roundsDone+1)}}, nil
 }
 
 func (p *MockProtocol) ProcessInbound(_ string, _ []byte) (bool, error) {
 	if p.shouldFail {
-		return false, fmt.Errorf("protocol %s always fails", p.name)
+		err := fmt.Errorf("protocol %s always fails", p.name)
+		p.failedErr = err
+		return false, err
 	}
 	p.roundsDone++
 	p.outboundReady = true
@@ -77,7 +76,7 @@ func (p *MockProtocol) Result() (*PhaseResult, error) {
 		return nil, fmt.Errorf("not finished")
 	}
 	return &PhaseResult{
-		PublicKey: fmt.Sprintf("pubkey-%s", p.name),
+		PublicKey:  fmt.Sprintf("pubkey-%s", p.name),
 		ChainCode: "chaincode",
 		Keyshare:  "keyshare",
 	}, nil
@@ -85,8 +84,9 @@ func (p *MockProtocol) Result() (*PhaseResult, error) {
 
 func (p *MockProtocol) Free() error { return nil }
 
-func runSlots(protocols []*MockProtocol, parties []string) int {
+func runSlots(protocols []*MockProtocol, parties []string) (int, map[string]error) {
 	slotsRan := 0
+	errors := make(map[string]error)
 	for slot := range MaxKeygenSlots {
 		_ = slot
 		slotsRan++
@@ -116,7 +116,11 @@ func runSlots(protocols []*MockProtocol, parties []string) int {
 				if p.IsFinished() {
 					continue
 				}
-				finished, _ := p.ProcessInbound("peer", []byte("msg"))
+				finished, err := p.ProcessInbound("peer", []byte("msg"))
+				if err != nil {
+					errors[p.Name()] = err
+					continue
+				}
 				progress = true
 				if finished {
 					break
@@ -150,19 +154,22 @@ func runSlots(protocols []*MockProtocol, parties []string) int {
 			break
 		}
 	}
-	return slotsRan
+	return slotsRan, errors
 }
 
 func TestAllProtocolsFinishInOneSlot(t *testing.T) {
 	protocols := []*MockProtocol{
-		NewMockProtocol("ecdsa", "p-ecdsa", true, 1, false),
-		NewMockProtocol("eddsa", "p-eddsa", true, 1, false),
-		NewMockProtocol("frozt", "p-frozt", false, 1, false),
+		NewMockProtocol("ecdsa", "p-ecdsa", 1, false),
+		NewMockProtocol("eddsa", "p-eddsa", 1, false),
+		NewMockProtocol("frozt", "p-frozt", 1, false),
 	}
 	parties := []string{"server", "client"}
 
-	slotsRan := runSlots(protocols, parties)
+	slotsRan, errors := runSlots(protocols, parties)
 
+	if len(errors) > 0 {
+		t.Fatalf("unexpected errors: %v", errors)
+	}
 	for _, p := range protocols {
 		if !p.IsFinished() {
 			t.Fatalf("protocol %s should have finished", p.Name())
@@ -175,14 +182,17 @@ func TestAllProtocolsFinishInOneSlot(t *testing.T) {
 
 func TestSlowProtocolFinishesInLaterSlot(t *testing.T) {
 	protocols := []*MockProtocol{
-		NewMockProtocol("ecdsa", "p-ecdsa", true, 1, false),
-		NewMockProtocol("eddsa", "p-eddsa", true, 3, false),
-		NewMockProtocol("frozt", "p-frozt", false, 1, false),
+		NewMockProtocol("ecdsa", "p-ecdsa", 1, false),
+		NewMockProtocol("eddsa", "p-eddsa", 3, false),
+		NewMockProtocol("frozt", "p-frozt", 1, false),
 	}
 	parties := []string{"server", "client"}
 
-	slotsRan := runSlots(protocols, parties)
+	slotsRan, errors := runSlots(protocols, parties)
 
+	if len(errors) > 0 {
+		t.Fatalf("unexpected errors: %v", errors)
+	}
 	for _, p := range protocols {
 		if !p.IsFinished() {
 			t.Fatalf("protocol %s should have finished", p.Name())
@@ -195,13 +205,13 @@ func TestSlowProtocolFinishesInLaterSlot(t *testing.T) {
 
 func TestFailingOptionalProtocolDoesNotBlockKeygen(t *testing.T) {
 	protocols := []*MockProtocol{
-		NewMockProtocol("ecdsa", "p-ecdsa", true, 2, false),
-		NewMockProtocol("eddsa", "p-eddsa", true, 2, false),
-		NewMockProtocol("frozt", "p-frozt", false, 1, true),
+		NewMockProtocol("ecdsa", "p-ecdsa", 2, false),
+		NewMockProtocol("eddsa", "p-eddsa", 2, false),
+		NewMockProtocol("frozt", "p-frozt", 1, true),
 	}
 	parties := []string{"server", "client"}
 
-	runSlots(protocols, parties)
+	_, errors := runSlots(protocols, parties)
 
 	if !protocols[0].IsFinished() {
 		t.Fatal("ecdsa should have finished")
@@ -212,32 +222,35 @@ func TestFailingOptionalProtocolDoesNotBlockKeygen(t *testing.T) {
 	if protocols[2].IsFinished() {
 		t.Fatal("frozt should NOT have finished (it always fails)")
 	}
+	if errors["frozt"] == nil {
+		t.Fatal("frozt error should have been captured")
+	}
 }
 
 func TestFailingRequiredProtocolDetected(t *testing.T) {
 	protocols := []*MockProtocol{
-		NewMockProtocol("ecdsa", "p-ecdsa", true, 1, true),
-		NewMockProtocol("eddsa", "p-eddsa", true, 1, false),
+		NewMockProtocol("ecdsa", "p-ecdsa", 1, true),
+		NewMockProtocol("eddsa", "p-eddsa", 1, false),
 	}
 	parties := []string{"server", "client"}
 
-	runSlots(protocols, parties)
+	_, errors := runSlots(protocols, parties)
 
 	if protocols[0].IsFinished() {
 		t.Fatal("ecdsa should NOT have finished (it always fails)")
 	}
-	if protocols[0].Required() && !protocols[0].IsFinished() {
-		// This is the expected state — coordinator should detect this
+	if errors["ecdsa"] == nil {
+		t.Fatal("ecdsa failure should have been detected")
 	}
 }
 
 func TestMaxSlotsRespected(t *testing.T) {
 	protocols := []*MockProtocol{
-		NewMockProtocol("ecdsa", "p-ecdsa", true, 100, false),
+		NewMockProtocol("ecdsa", "p-ecdsa", 100, false),
 	}
 	parties := []string{"server", "client"}
 
-	slotsRan := runSlots(protocols, parties)
+	slotsRan, _ := runSlots(protocols, parties)
 
 	if slotsRan > MaxKeygenSlots {
 		t.Fatalf("expected max %d slots, got %d", MaxKeygenSlots, slotsRan)
@@ -246,15 +259,18 @@ func TestMaxSlotsRespected(t *testing.T) {
 
 func TestFastForwardWhenAllAdvance(t *testing.T) {
 	protocols := []*MockProtocol{
-		NewMockProtocol("ecdsa", "p-ecdsa", true, 3, false),
-		NewMockProtocol("eddsa", "p-eddsa", true, 3, false),
+		NewMockProtocol("ecdsa", "p-ecdsa", 3, false),
+		NewMockProtocol("eddsa", "p-eddsa", 3, false),
 	}
 	parties := []string{"server", "client"}
 
 	start := time.Now()
-	slotsRan := runSlots(protocols, parties)
+	slotsRan, errors := runSlots(protocols, parties)
 	elapsed := time.Since(start)
 
+	if len(errors) > 0 {
+		t.Fatalf("unexpected errors: %v", errors)
+	}
 	for _, p := range protocols {
 		if !p.IsFinished() {
 			t.Fatalf("protocol %s should have finished", p.Name())

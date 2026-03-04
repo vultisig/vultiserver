@@ -32,6 +32,8 @@ var (
 	party1     = "server-party-1"
 	party2     = "server-party-2"
 	parties    = []string{party1, party2}
+
+	httpClient = &http.Client{Timeout: 30 * time.Second}
 )
 
 func main() {
@@ -170,6 +172,10 @@ func test2_PartialSuccess() (string, bool) {
 	ecdsaPK := r1.ECDSAPublicKey
 	fmt.Printf("  ECDSA pubkey: %s\n", ecdsaPK)
 
+	if !assertPhasesPresent(r1, []string{"ecdsa", "eddsa", "frozt"}) {
+		ok = false
+	}
+
 	for _, phase := range r1.Phases {
 		switch phase.Name {
 		case "ecdsa", "eddsa":
@@ -218,6 +224,9 @@ func test3_Append(ecdsaPK string) bool {
 	}
 
 	ok := true
+	if !assertPhasesPresent(r1, []string{"ecdsa", "eddsa", "frozt", "fromt"}) {
+		ok = false
+	}
 	for _, phase := range r1.Phases {
 		switch phase.Name {
 		case "ecdsa", "eddsa":
@@ -290,6 +299,9 @@ func test5_FullBatch() bool {
 	}
 
 	ok := true
+	if !assertPhasesPresent(r1, []string{"ecdsa", "eddsa", "frozt", "fromt"}) {
+		ok = false
+	}
 	for _, phase := range r1.Phases {
 		if !phase.Success {
 			fmt.Printf("  FAIL: %s should have succeeded: %s\n", phase.Name, phase.Error)
@@ -361,7 +373,7 @@ func postBatch(serverURL, sessionID, hexKey, localPartyID string, protocols []st
 		reqBody["public_key"] = publicKey
 	}
 	body, _ := json.Marshal(reqBody)
-	resp, err := http.Post(serverURL+"/vault/batch", "application/json", bytes.NewReader(body))
+	resp, err := httpClient.Post(serverURL+"/vault/batch", "application/json", bytes.NewReader(body))
 	if err != nil {
 		fmt.Printf("  POST failed: %v\n", err)
 		return ""
@@ -382,7 +394,7 @@ func pollTaskResult(serverURL, taskID string, timeout time.Duration) *TaskResult
 	}
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(serverURL + "/vault/task/" + taskID)
+		resp, err := httpClient.Get(serverURL + "/vault/task/" + taskID)
 		if err != nil {
 			time.Sleep(time.Second)
 			continue
@@ -459,7 +471,7 @@ func sendRelayMessage(relayURL, sessionID, hexKey, from, to string, data []byte,
 	if messageID != "" {
 		req.Header.Set("message_id", messageID)
 	}
-	resp, _ := http.DefaultClient.Do(req)
+	resp, _ := httpClient.Do(req)
 	if resp != nil {
 		resp.Body.Close()
 	}
@@ -469,7 +481,7 @@ func waitForParties(relayURL, sessionID string, expected int, timeout time.Durat
 	url := relayURL + "/" + sessionID
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(url)
+		resp, err := httpClient.Get(url)
 		if err != nil {
 			time.Sleep(500 * time.Millisecond)
 			continue
@@ -493,7 +505,7 @@ func waitForParties(relayURL, sessionID string, expected int, timeout time.Durat
 func uploadSetupMessage(relayURL, sessionID, payload string) {
 	req, _ := http.NewRequest("POST", relayURL+"/setup-message/"+sessionID, strings.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		fatal("upload setup: %v", err)
 	}
@@ -502,7 +514,7 @@ func uploadSetupMessage(relayURL, sessionID, payload string) {
 
 func startSession(relayURL, sessionID string, parties []string) {
 	body, _ := json.Marshal(parties)
-	resp, err := http.Post(relayURL+"/start/"+sessionID, "application/json", bytes.NewReader(body))
+	resp, err := httpClient.Post(relayURL+"/start/"+sessionID, "application/json", bytes.NewReader(body))
 	if err != nil {
 		fatal("start session: %v", err)
 	}
@@ -512,7 +524,7 @@ func startSession(relayURL, sessionID string, parties []string) {
 func waitForHealth(url string, timeout time.Duration) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(url)
+		resp, err := httpClient.Get(url)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			resp.Body.Close()
 			return
@@ -523,6 +535,21 @@ func waitForHealth(url string, timeout time.Duration) {
 		time.Sleep(time.Second)
 	}
 	fatal("timeout waiting for %s", url)
+}
+
+func assertPhasesPresent(result *TaskResultResponse, expected []string) bool {
+	present := make(map[string]bool)
+	for _, p := range result.Phases {
+		present[p.Name] = true
+	}
+	ok := true
+	for _, name := range expected {
+		if !present[name] {
+			fmt.Printf("  FAIL: expected phase %q missing from result\n", name)
+			ok = false
+		}
+	}
+	return ok
 }
 
 func envOrDefault(key, def string) string {

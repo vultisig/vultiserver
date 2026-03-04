@@ -19,7 +19,6 @@ const (
 type FromtKeygenProtocol struct {
 	name       string
 	msgPrefix  string
-	required   bool
 	finished   bool
 	step       int
 
@@ -46,7 +45,6 @@ type FromtKeygenProtocol struct {
 
 func NewFromtKeygenProtocol(
 	name, messagePrefix string,
-	required bool,
 	localPartyID string,
 	parties []string,
 ) (*FromtKeygenProtocol, error) {
@@ -58,7 +56,6 @@ func NewFromtKeygenProtocol(
 	return &FromtKeygenProtocol{
 		name:         name,
 		msgPrefix:    messagePrefix,
-		required:     required,
 		myId:         myId,
 		maxSigners:   n,
 		minSigners:   n,
@@ -70,7 +67,6 @@ func NewFromtKeygenProtocol(
 }
 
 func (p *FromtKeygenProtocol) Name() string     { return p.name }
-func (p *FromtKeygenProtocol) Required() bool    { return p.required }
 func (p *FromtKeygenProtocol) IsFinished() bool  { return p.finished }
 
 func (p *FromtKeygenProtocol) MessageID() string {

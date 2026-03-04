@@ -29,6 +29,9 @@ COPY --from=builder /out/orchestrator ./
 COPY --from=builder /out/libs/ /usr/local/lib/
 RUN ldconfig
 
+RUN useradd --system --no-create-home appuser
+USER appuser
+
 ENV LD_LIBRARY_PATH=/usr/local/lib
 
 CMD ["./orchestrator"]

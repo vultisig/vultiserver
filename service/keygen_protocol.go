@@ -39,7 +39,6 @@ type KeygenResult struct {
 type KeygenProtocol interface {
 	Name() string
 	MessageID() string
-	Required() bool
 	IsFinished() bool
 	DrainOutbound(parties []string) ([]OutboundMsg, error)
 	ProcessInbound(from string, body []byte) (finished bool, err error)

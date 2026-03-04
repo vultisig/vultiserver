@@ -35,11 +35,12 @@ jobs:
     - name: Install frost-zm libraries
       run: |
         GOPRIVATE=github.com/vultisig/* go mod download github.com/vultisig/frost-zm/go
-        FROZT_DIR=$(go env GOMODCACHE)/github.com/vultisig/frost-zm/go@*/frozt/includes/linux-amd64
-        FROMT_DIR=$(go env GOMODCACHE)/github.com/vultisig/frost-zm/go@*/fromt/includes/linux-amd64
+        FROST_ZM_DIR="$(go list -m -f '{{.Dir}}' github.com/vultisig/frost-zm/go)"
+        FROZT_DIR="$FROST_ZM_DIR/frozt/includes/linux-amd64"
+        FROMT_DIR="$FROST_ZM_DIR/fromt/includes/linux-amd64"
         sudo mkdir -p /usr/local/lib/frost-zm
-        sudo cp $FROZT_DIR/*.so /usr/local/lib/frost-zm/ 2>/dev/null || true
-        sudo cp $FROMT_DIR/*.so /usr/local/lib/frost-zm/ 2>/dev/null || true
+        sudo cp "$FROZT_DIR"/*.so /usr/local/lib/frost-zm/
+        sudo cp "$FROMT_DIR"/*.so /usr/local/lib/frost-zm/
         ls -la /usr/local/lib/frost-zm/
       env:
         CGO_ENABLED: 1

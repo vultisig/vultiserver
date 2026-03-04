@@ -34,6 +34,9 @@ COPY vultiserver/test/integration/entrypoint.sh ./
 COPY vultiserver/test/integration/config.yaml ./config.yaml
 RUN chmod +x entrypoint.sh
 
+RUN useradd --system --no-create-home appuser
+USER appuser
+
 ENV LD_LIBRARY_PATH=/usr/local/lib
 
 CMD ["./entrypoint.sh"]

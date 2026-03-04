@@ -20,7 +20,6 @@ const (
 type FroztKeygenProtocol struct {
 	name       string
 	msgPrefix  string
-	required   bool
 	finished   bool
 	step       int
 
@@ -48,7 +47,6 @@ type FroztKeygenProtocol struct {
 
 func NewFroztKeygenProtocol(
 	name, messagePrefix string,
-	required bool,
 	localPartyID string,
 	parties []string,
 ) (*FroztKeygenProtocol, error) {
@@ -60,7 +58,6 @@ func NewFroztKeygenProtocol(
 	return &FroztKeygenProtocol{
 		name:       name,
 		msgPrefix:  messagePrefix,
-		required:   required,
 		myId:       myId,
 		maxSigners: n,
 		minSigners: n,
@@ -95,7 +92,6 @@ func getPartyForFrostIdStatic(frostId uint16, parties []string) string {
 }
 
 func (p *FroztKeygenProtocol) Name() string     { return p.name }
-func (p *FroztKeygenProtocol) Required() bool    { return p.required }
 func (p *FroztKeygenProtocol) IsFinished() bool  { return p.finished }
 
 func (p *FroztKeygenProtocol) MessageID() string {

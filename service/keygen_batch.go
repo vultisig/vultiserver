@@ -221,13 +221,13 @@ func (t *DKLSTssService) initProtocols(names []string, setupMsg []byte, localPar
 func (t *DKLSTssService) initProtocol(name string, setupMsg []byte, localPartyID string, parties []string) (KeygenProtocol, error) {
 	switch name {
 	case "ecdsa":
-		return NewMPCKeygenProtocol("ecdsa", "p-ecdsa", false, setupMsg, localPartyID, false, false)
+		return NewMPCKeygenProtocol("ecdsa", "p-ecdsa", setupMsg, localPartyID, false, false)
 	case "eddsa":
-		return NewMPCKeygenProtocol("eddsa", "p-eddsa", false, setupMsg, localPartyID, true, false)
+		return NewMPCKeygenProtocol("eddsa", "p-eddsa", setupMsg, localPartyID, true, false)
 	case "frozt":
-		return NewFroztKeygenProtocol("frozt", "p-frozt", false, localPartyID, parties)
+		return NewFroztKeygenProtocol("frozt", "p-frozt", localPartyID, parties)
 	case "fromt":
-		return NewFromtKeygenProtocol("fromt", "p-fromt", false, localPartyID, parties)
+		return NewFromtKeygenProtocol("fromt", "p-fromt", localPartyID, parties)
 	default:
 		return nil, fmt.Errorf("unknown protocol: %s", name)
 	}
