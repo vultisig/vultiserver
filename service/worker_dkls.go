@@ -161,6 +161,65 @@ func (s *WorkerService) HandleCreateMldsa(ctx context.Context, t *asynq.Task) er
 	return nil
 }
 
+func (s *WorkerService) HandleKeygenBatch(ctx context.Context, t *asynq.Task) error {
+	cancelErr := contexthelper.CheckCancellation(ctx)
+	if cancelErr != nil {
+		return cancelErr
+	}
+	defer s.measureTime("worker.vault.keygen.batch.latency", time.Now(), []string{})
+	var req types.BatchVaultRequest
+	unmarshalErr := json.Unmarshal(t.Payload(), &req)
+	if unmarshalErr != nil {
+		return fmt.Errorf("json.Unmarshal failed: %v: %w", unmarshalErr, asynq.SkipRetry)
+	}
+	s.logger.WithFields(logrus.Fields{
+		"name":           req.Name,
+		"session":        req.SessionID,
+		"local_party_id": req.LocalPartyId,
+		"protocols":      req.Protocols,
+	}).Info("Joining batch keygen")
+	s.incCounter("worker.vault.keygen.batch", []string{})
+	validErr := req.IsValid()
+	if validErr != nil {
+		return fmt.Errorf("invalid request: %s: %w", validErr, asynq.SkipRetry)
+	}
+	localStateAccessor, err := relay.NewLocalStateAccessorImp(s.cfg.Server.VaultsFilePath, "", "", s.blockStorage)
+	if err != nil {
+		return fmt.Errorf("relay.NewLocalStateAccessorImp failed: %s: %w", err, asynq.SkipRetry)
+	}
+	dklsService, err := NewDKLSTssService(s.cfg, s.blockStorage, localStateAccessor, s)
+	if err != nil {
+		return fmt.Errorf("NewDKLSTssService failed: %s: %w", err, asynq.SkipRetry)
+	}
+	result, keygenErr := dklsService.ProcessBatchKeygen(req)
+	if keygenErr != nil {
+		s.incCounter("worker.vault.keygen.batch.error", []string{})
+		s.logger.Errorf("batch keygen failed: %v", keygenErr)
+		if result == nil {
+			return fmt.Errorf("batch keygen failed: %v: %w", keygenErr, asynq.SkipRetry)
+		}
+	}
+	if result == nil {
+		return fmt.Errorf("batch keygen returned nil result: %w", asynq.SkipRetry)
+	}
+
+	s.logger.WithFields(logrus.Fields{
+		"keyECDSA": result.ECDSAPublicKey,
+		"keyEDDSA": result.EDDSAPublicKey,
+		"phases":   result.Phases,
+	}).Info("batch keygen completed")
+
+	resultBytes, marshalErr := json.Marshal(result)
+	if marshalErr != nil {
+		return fmt.Errorf("json.Marshal failed: %v: %w", marshalErr, asynq.SkipRetry)
+	}
+	_, writeErr := t.ResultWriter().Write(resultBytes)
+	if writeErr != nil {
+		return fmt.Errorf("t.ResultWriter.Write failed: %v: %w", writeErr, asynq.SkipRetry)
+	}
+	return nil
+}
+
 func (s *WorkerService) HandleImport(ctx context.Context, t *asynq.Task) error {
 	if err := contexthelper.CheckCancellation(ctx); err != nil {
 		return err

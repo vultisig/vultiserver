@@ -97,6 +97,23 @@ func (req *CreateMldsaRequest) IsValid() error {
 	return nil
 }
 
+type BatchVaultRequest struct {
+	VaultCreateRequest
+	Protocols []string `json:"protocols"`
+	PublicKey string   `json:"public_key,omitempty"`
+}
+
+func (req *BatchVaultRequest) IsValid() error {
+	err := req.VaultCreateRequest.IsValid()
+	if err != nil {
+		return err
+	}
+	if len(req.Protocols) == 0 {
+		return fmt.Errorf("protocols list is required")
+	}
+	return nil
+}
+
 // VaultCreateResponse is a struct that represents a response to create a new vault
 // integration partner need to use this information to construct a QR Code , so vultisig device can participate in the vault creation process.
 type VaultCreateResponse struct {

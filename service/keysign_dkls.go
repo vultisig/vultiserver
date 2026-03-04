@@ -56,7 +56,9 @@ func (t *DKLSTssService) ProcessDKLSKeysign(req types.KeysignRequest) (map[strin
 	}
 
 	publicKey := req.PublicKey
-	if !req.IsECDSA {
+	if req.Mldsa {
+		publicKey = localStateAccessor.Vault.PublicKeyMldsa44
+	} else if !req.IsECDSA {
 		publicKey = localStateAccessor.Vault.PublicKeyEddsa
 	}
 
