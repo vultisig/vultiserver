@@ -18,6 +18,11 @@ import (
 	"github.com/vultisig/vultiserver/relay"
 )
 
+var protocolChainName = map[string]string{
+	"frozt": "ZcashSapling",
+	"fromt": "Monero",
+}
+
 func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*KeygenResult, error) {
 	var existingVault *vaultType.Vault
 	protocolsToRun := req.Protocols
@@ -86,7 +91,7 @@ func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*Keyge
 		return nil, fmt.Errorf("failed to decode setup message: %w", err)
 	}
 
-	protocols, err := t.initProtocols(protocolsToRun, setupMsg, req.LocalPartyId, relayClient, req.SessionID, req.HexEncryptionKey)
+	protocols, err := t.initProtocols(protocolsToRun, setupMsg, req.LocalPartyId, partiesJoined, relayClient, req.SessionID, req.HexEncryptionKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init protocols: %w", err)
 	}
@@ -155,9 +160,22 @@ func protocolPublicKey(vault *vaultType.Vault, protocol string) string {
 		return vault.PublicKeyEddsa
 	case "mldsa":
 		return vault.PublicKeyMldsa44
+	case "frozt":
+		return chainPublicKey(vault, "ZcashSapling")
+	case "fromt":
+		return chainPublicKey(vault, "Monero")
 	default:
 		return ""
 	}
+}
+
+func chainPublicKey(vault *vaultType.Vault, chain string) string {
+	for _, cpk := range vault.ChainPublicKeys {
+		if cpk.Chain == chain {
+			return cpk.PublicKey
+		}
+	}
+	return ""
 }
 
 func containsProtocol(list []string, name string) bool {
@@ -187,7 +205,7 @@ func hasAnySuccess(result *KeygenResult) bool {
 }
 
 func (t *DKLSTssService) initProtocols(
-	names []string, setupMsg []byte, localPartyID string,
+	names []string, setupMsg []byte, localPartyID string, parties []string,
 	relayClient *relay.Client, sessionID, hexEncryptionKey string,
 ) ([]KeygenProtocol, error) {
 	var protocols []KeygenProtocol
@@ -201,7 +219,7 @@ func (t *DKLSTssService) initProtocols(
 			}
 			protocolSetupMsg = mldsaSetup
 		}
-		p, err := t.initProtocol(name, protocolSetupMsg, localPartyID)
+		p, err := t.initProtocol(name, protocolSetupMsg, localPartyID, parties)
 		if err != nil {
 			freeProtocols(protocols)
 			return nil, fmt.Errorf("init %s: %w", name, err)
@@ -223,12 +241,16 @@ func (t *DKLSTssService) fetchProtocolSetupMessage(
 	return t.decodeDecryptMessage(encryptedMsg, hexEncryptionKey)
 }
 
-func (t *DKLSTssService) initProtocol(name string, setupMsg []byte, localPartyID string) (KeygenProtocol, error) {
+func (t *DKLSTssService) initProtocol(name string, setupMsg []byte, localPartyID string, parties []string) (KeygenProtocol, error) {
 	switch name {
 	case "ecdsa":
 		return NewMPCKeygenProtocol("ecdsa", "p-ecdsa", setupMsg, localPartyID, false, false)
 	case "eddsa":
 		return NewMPCKeygenProtocol("eddsa", "p-eddsa", setupMsg, localPartyID, true, false)
+	case "frozt":
+		return NewFroztKeygenProtocol("frozt", "p-frozt", localPartyID, parties)
+	case "fromt":
+		return NewFromtKeygenProtocol("fromt", "p-fromt", localPartyID, parties)
 	case "mldsa":
 		return NewMPCKeygenProtocol("mldsa", "p-mldsa", setupMsg, localPartyID, true, true)
 	default:
@@ -507,6 +529,13 @@ func (t *DKLSTssService) saveVault(
 			vault.PublicKeyEddsa = pr.PublicKey
 		case "mldsa":
 			vault.PublicKeyMldsa44 = pr.PublicKey
+		default:
+			chainName := protocolChainName[name]
+			if chainName != "" {
+				vault.ChainPublicKeys = append(vault.ChainPublicKeys,
+					&vaultType.Vault_ChainPublicKey{Chain: chainName, PublicKey: pr.PublicKey},
+				)
+			}
 		}
 	}
 

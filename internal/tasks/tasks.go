@@ -16,4 +16,6 @@ const (
 	TypeKeygenBatch       = "key:keygenBatch"
 	TypeReshareBatch      = "key:reshareBatch"
 	TypeImportBatch       = "key:importBatch"
+	TypeKeySignFrozt      = "key:signFrozt"
+	TypeKeySignFromt      = "key:signFromt"
 )

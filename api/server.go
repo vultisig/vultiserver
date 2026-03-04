@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
@@ -594,10 +595,15 @@ func (s *Server) SignMessages(c echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("fail to marshal to json, err: %w", err)
 	}
-	var typeName = ""
-	if vault.LibType == keygen.LibType_LIB_TYPE_GG20 {
+	var typeName string
+	switch {
+	case strings.EqualFold(req.Chain, "ZcashSapling"):
+		typeName = tasks.TypeKeySignFrozt
+	case strings.EqualFold(req.Chain, "Monero"):
+		typeName = tasks.TypeKeySignFromt
+	case vault.LibType == keygen.LibType_LIB_TYPE_GG20:
 		typeName = tasks.TypeKeySign
-	} else {
+	default:
 		typeName = tasks.TypeKeySignDKLS
 	}
 	ti, err := s.client.EnqueueContext(c.Request().Context(),
