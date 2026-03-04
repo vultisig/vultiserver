@@ -104,12 +104,25 @@ type BatchVaultRequest struct {
 }
 
 func (req *BatchVaultRequest) IsValid() error {
-	err := req.VaultCreateRequest.IsValid()
-	if err != nil {
-		return err
+	if req.PublicKey == "" {
+		err := req.VaultCreateRequest.IsValid()
+		if err != nil {
+			return err
+		}
 	}
 	if len(req.Protocols) == 0 {
 		return fmt.Errorf("protocols list is required")
+	}
+	known := map[string]bool{"ecdsa": true, "eddsa": true, "mldsa": true}
+	seen := map[string]bool{}
+	for _, p := range req.Protocols {
+		if !known[p] {
+			return fmt.Errorf("unknown protocol: %s", p)
+		}
+		if seen[p] {
+			return fmt.Errorf("duplicate protocol: %s", p)
+		}
+		seen[p] = true
 	}
 	return nil
 }

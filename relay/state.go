@@ -61,7 +61,11 @@ func (l *LocalStateAccessorImp) GetLocalState(pubKey string) (string, error) {
 	if !ok {
 		return "", nil
 	}
-	return val.(string), nil
+	state, ok := val.(string)
+	if !ok {
+		return "", fmt.Errorf("invalid cached local state type for key %s", pubKey)
+	}
+	return state, nil
 }
 
 func (l *LocalStateAccessorImp) SaveLocalState(pubKey, localState string) error {
@@ -74,5 +78,9 @@ func (l *LocalStateAccessorImp) GetLocalCacheState(pubKey string) (string, error
 	if !ok {
 		return "", nil
 	}
-	return val.(string), nil
+	state, ok := val.(string)
+	if !ok {
+		return "", fmt.Errorf("invalid cached state type for key %s", pubKey)
+	}
+	return state, nil
 }

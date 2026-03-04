@@ -322,6 +322,7 @@ func TestProtocolListValidation(t *testing.T) {
 		{[]string{"eddsa"}, true},
 		{[]string{}, true},
 		{[]string{"ecdsa", "eddsa", "unknown"}, true},
+		{[]string{"ecdsa", "eddsa", "ecdsa"}, true},
 	}
 
 	for _, tt := range tests {
@@ -336,10 +337,15 @@ func validateProtocolList(names []string) error {
 	known := map[string]bool{"ecdsa": true, "eddsa": true, "mldsa": true}
 	hasECDSA := false
 	hasEdDSA := false
+	seen := map[string]bool{}
 	for _, name := range names {
 		if !known[name] {
 			return fmt.Errorf("unknown protocol: %s", name)
 		}
+		if seen[name] {
+			return fmt.Errorf("duplicate protocol: %s", name)
+		}
+		seen[name] = true
 		if name == "ecdsa" {
 			hasECDSA = true
 		}

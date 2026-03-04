@@ -24,10 +24,15 @@ var knownProtocols = map[string]bool{
 }
 
 func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*KeygenResult, error) {
+	seen := make(map[string]bool, len(req.Protocols))
 	for _, name := range req.Protocols {
 		if !knownProtocols[name] {
 			return nil, fmt.Errorf("unknown protocol: %s", name)
 		}
+		if seen[name] {
+			return nil, fmt.Errorf("duplicate protocol: %s", name)
+		}
+		seen[name] = true
 	}
 
 	var existingVault *vaultType.Vault
@@ -119,6 +124,10 @@ func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*Keyge
 	}
 
 	result := t.collectResults(protocols, req.Protocols, protocolsToRun)
+
+	if len(protocolsToRun) > 0 && !hasAnySuccess(result) {
+		return result, fmt.Errorf("all requested protocols failed")
+	}
 
 	if t.backup != nil && hasAnySuccess(result) {
 		backupErr := t.saveVault(req, partiesJoined, existingVault, result)
@@ -252,14 +261,21 @@ func (t *DKLSTssService) runKeygen(
 
 	for _, p := range protocols {
 		outbound, err := p.DrainOutbound(parties)
+		if len(outbound) > 0 {
+			sendErr := t.sendMessages(p.MessageID(), outbound, sessionID, hexEncryptionKey, localPartyID, parties)
+			if sendErr != nil {
+				t.logger.WithFields(logrus.Fields{
+					"protocol": p.Name(),
+					"error":    sendErr,
+				}).Warn("initial send outbound failed")
+			}
+		}
 		if err != nil {
 			t.logger.WithFields(logrus.Fields{
 				"protocol": p.Name(),
 				"error":    err,
 			}).Error("initial drain outbound failed")
-			continue
 		}
-		t.sendMessages(p.MessageID(), outbound, sessionID, hexEncryptionKey, localPartyID, parties)
 	}
 
 	for time.Now().Before(deadline) {
@@ -304,9 +320,16 @@ func (t *DKLSTssService) runKeygen(
 				}
 			}
 			newOutbound, drainErr := p.DrainOutbound(parties)
-			if drainErr == nil && len(newOutbound) > 0 {
-				t.sendMessages(p.MessageID(), newOutbound, sessionID, hexEncryptionKey, localPartyID, parties)
-				progress = true
+			if len(newOutbound) > 0 {
+				sendErr := t.sendMessages(p.MessageID(), newOutbound, sessionID, hexEncryptionKey, localPartyID, parties)
+				if sendErr != nil {
+					t.logger.WithFields(logrus.Fields{"protocol": p.Name(), "error": sendErr}).Warn("send outbound failed")
+				} else {
+					progress = true
+				}
+			}
+			if drainErr != nil {
+				t.logger.WithFields(logrus.Fields{"protocol": p.Name(), "error": drainErr}).Warn("drain outbound failed")
 			}
 		}
 
@@ -321,7 +344,7 @@ func (t *DKLSTssService) sendMessages(
 	messages []OutboundMsg,
 	sessionID, hexEncryptionKey, localPartyID string,
 	parties []string,
-) {
+) error {
 	messenger := relay.NewMessenger(t.cfg.Relay.Server, sessionID, hexEncryptionKey, true, messageID)
 	for _, msg := range messages {
 		body := base64.StdEncoding.EncodeToString(msg.Body)
@@ -330,12 +353,19 @@ func (t *DKLSTssService) sendMessages(
 				if peer == localPartyID {
 					continue
 				}
-				_ = messenger.Send(localPartyID, peer, body)
+				err := messenger.Send(localPartyID, peer, body)
+				if err != nil {
+					return fmt.Errorf("send to %s: %w", peer, err)
+				}
 			}
 		} else {
-			_ = messenger.Send(localPartyID, msg.To, body)
+			err := messenger.Send(localPartyID, msg.To, body)
+			if err != nil {
+				return fmt.Errorf("send to %s: %w", msg.To, err)
+			}
 		}
 	}
+	return nil
 }
 
 func allFinished(protocols []KeygenProtocol) bool {

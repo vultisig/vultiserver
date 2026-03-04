@@ -62,7 +62,7 @@ func (t *DKLSTssService) ProcessDKLSKeysign(req types.KeysignRequest) (map[strin
 		publicKey = localStateAccessor.Vault.PublicKeyEddsa
 	}
 
-	if req.Chain != "" && localStateAccessor.Vault.LibType == v1.LibType_LIB_TYPE_KEYIMPORT {
+	if !req.Mldsa && req.Chain != "" && localStateAccessor.Vault.LibType == v1.LibType_LIB_TYPE_KEYIMPORT {
 		found := false
 		for _, chainInfo := range localStateAccessor.Vault.ChainPublicKeys {
 			if strings.EqualFold(chainInfo.Chain, req.Chain) {

@@ -29,7 +29,11 @@ func NewMPCKeygenProtocol(
 	isEdDSA, isMldsa bool,
 ) (*MPCKeygenProtocol, error) {
 	wrapper := NewMPCWrapperImp(isEdDSA, isMldsa)
-	handle, err := wrapper.KeygenSessionFromSetup(mldsaSession.MlDsa44, setupMsg, []byte(localPartyID))
+	var level mldsaSession.SecurityLevel
+	if isMldsa {
+		level = mldsaSession.MlDsa44
+	}
+	handle, err := wrapper.KeygenSessionFromSetup(level, setupMsg, []byte(localPartyID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create %s session: %w", name, err)
 	}

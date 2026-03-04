@@ -215,7 +215,7 @@ func (s *Server) CreateVaultBatch(c echo.Context) error {
 		return fmt.Errorf("fail to enqueue task, err: %w", err)
 	}
 
-	setErr := s.redis.Set(c.Request().Context(), cacheKey, taskInfo.ID, 5*time.Minute)
+	setErr := s.redis.Set(c.Request().Context(), cacheKey, taskInfo.ID, 8*time.Minute)
 	if setErr != nil {
 		s.logger.Errorf("fail to cache task id, err: %v", setErr)
 	}
