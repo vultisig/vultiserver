@@ -115,6 +115,9 @@ func (p *FromtKeygenProtocol) ProcessInbound(from string, body []byte) (bool, er
 	if from == p.localParty {
 		return false, nil
 	}
+	if getFrostIdStatic(from, p.parties) == 0 {
+		return false, fmt.Errorf("fromt: unexpected sender %s", from)
+	}
 
 	switch p.step {
 	case fromtStepWaitR1:
@@ -209,13 +212,19 @@ func (p *FromtKeygenProtocol) Result() (*PhaseResult, error) {
 }
 
 func (p *FromtKeygenProtocol) Free() error {
+	var firstErr error
 	if p.secret2 != nil {
-		return p.secret2.Close()
+		firstErr = p.secret2.Close()
+		p.secret2 = nil
 	}
 	if p.secret1 != nil {
-		return p.secret1.Close()
+		err := p.secret1.Close()
+		if firstErr == nil {
+			firstErr = err
+		}
+		p.secret1 = nil
 	}
-	return nil
+	return firstErr
 }
 
 func buildFromtMap(partyDataMap map[string][]byte, parties []string) []byte {

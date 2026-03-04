@@ -143,6 +143,9 @@ func (p *FroztKeygenProtocol) ProcessInbound(from string, body []byte) (bool, er
 	if from == p.localParty {
 		return false, nil
 	}
+	if getFrostIdStatic(from, p.parties) == 0 {
+		return false, fmt.Errorf("frozt: unexpected sender %s", from)
+	}
 
 	switch p.step {
 	case froztStepWaitR1:
@@ -279,13 +282,19 @@ func (p *FroztKeygenProtocol) Result() (*PhaseResult, error) {
 }
 
 func (p *FroztKeygenProtocol) Free() error {
+	var firstErr error
 	if p.secret2 != 0 {
-		return p.secret2.Close()
+		firstErr = p.secret2.Close()
+		p.secret2 = 0
 	}
 	if p.secret1 != 0 {
-		return p.secret1.Close()
+		err := p.secret1.Close()
+		if firstErr == nil {
+			firstErr = err
+		}
+		p.secret1 = 0
 	}
-	return nil
+	return firstErr
 }
 
 func buildFrostMapStatic(partyDataMap map[string][]byte, parties []string) []byte {

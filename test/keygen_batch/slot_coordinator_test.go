@@ -1,4 +1,4 @@
-package keygen_parallel_test
+package keygen_batch_test
 
 import (
 	"fmt"

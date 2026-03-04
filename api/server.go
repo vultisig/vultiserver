@@ -195,7 +195,7 @@ func (s *Server) CreateVaultBatch(c echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("fail to marshal to json, err: %w", err)
 	}
-	metricErr := s.sdClient.Count("vault.create.parallel", 1, nil, 1)
+	metricErr := s.sdClient.Count("vault.create.batch", 1, nil, 1)
 	if metricErr != nil {
 		s.logger.Errorf("fail to count metric, err: %v", metricErr)
 	}

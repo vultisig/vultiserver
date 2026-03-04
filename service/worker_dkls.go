@@ -177,7 +177,7 @@ func (s *WorkerService) HandleKeygenBatch(ctx context.Context, t *asynq.Task) er
 		"session":        req.SessionID,
 		"local_party_id": req.LocalPartyId,
 		"protocols":      req.Protocols,
-	}).Info("Joining parallel keygen")
+	}).Info("Joining batch keygen")
 	s.incCounter("worker.vault.keygen.batch", []string{})
 	validErr := req.IsValid()
 	if validErr != nil {
@@ -198,6 +198,9 @@ func (s *WorkerService) HandleKeygenBatch(ctx context.Context, t *asynq.Task) er
 		if result == nil {
 			return fmt.Errorf("batch keygen failed: %v: %w", keygenErr, asynq.SkipRetry)
 		}
+	}
+	if result == nil {
+		return fmt.Errorf("batch keygen returned nil result: %w", asynq.SkipRetry)
 	}
 
 	s.logger.WithFields(logrus.Fields{
