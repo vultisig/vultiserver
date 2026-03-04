@@ -87,91 +87,114 @@ func (t *DKLSTssService) fromtSign(
 		return nil, fmt.Errorf("decode message hex: %w", err)
 	}
 
-	myFrostID := getFrostIdStatic(localPartyID, parties)
-	if myFrostID == 0 {
-		return nil, fmt.Errorf("local party %s not found in parties", localPartyID)
-	}
-
-	nonces, commitment, err := fromt.SignCommit(keyShare)
+	partyInfos := buildFromtPartyInfos(parties)
+	setup, err := fromt.SignSetupMsgNew(msgBytes, partyInfos)
 	if err != nil {
-		return nil, fmt.Errorf("fromt SignCommit: %w", err)
+		return nil, fmt.Errorf("fromt sign setup: %w", err)
 	}
-	defer nonces.Close()
 
-	commitMsgID := "fromt-sign-commit-" + messageHex[:8]
-	shareMsgID := "fromt-sign-share-" + messageHex[:8]
+	pk, err := fromt.KeySharePublicKey(keyShare)
+	if err != nil {
+		return nil, fmt.Errorf("fromt extract pubkey: %w", err)
+	}
 
-	messenger := relay.NewMessenger(t.cfg.Relay.Server, sessionID, hexEncryptionKey, true, commitMsgID)
-	encodedCommitment := base64.StdEncoding.EncodeToString(commitment)
-	for _, peer := range parties {
-		if peer == localPartyID {
+	session, err := fromt.SignSessionFromSetup(setup, []byte(localPartyID), keyShare, pk)
+	if err != nil {
+		return nil, fmt.Errorf("fromt sign session: %w", err)
+	}
+	defer fromt.SignSessionFree(session)
+
+	msgID := "fromt-sign-" + messageHex[:8]
+	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
+	deadline := time.Now().Add(time.Minute)
+
+	for {
+		outbound, takeErr := fromt.SignSessionTakeMsg(session)
+		if takeErr != nil {
+			return nil, fmt.Errorf("fromt sign take msg: %w", takeErr)
+		}
+		if len(outbound) == 0 {
+			break
+		}
+		t.sendFromtSessionMsg(session, outbound, sessionID, hexEncryptionKey, localPartyID, parties, msgID)
+	}
+
+	for time.Now().Before(deadline) {
+		messages, dlErr := relayClient.DownloadMessages(sessionID, localPartyID, msgID)
+		if dlErr != nil {
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
-		sendErr := messenger.Send(localPartyID, peer, encodedCommitment)
-		if sendErr != nil {
-			t.logger.WithField("error", sendErr).Error("failed to send fromt commitment")
+
+		progress := false
+		for _, msg := range messages {
+			if msg.From == localPartyID {
+				continue
+			}
+			body, decErr := t.decodeDecryptMessage(msg.Body, hexEncryptionKey)
+			if decErr != nil {
+				_ = relayClient.DeleteMessageFromServer(sessionID, localPartyID, msg.Hash, msgID)
+				continue
+			}
+			finished, procErr := fromt.SignSessionFeed(session, body)
+			if procErr != nil {
+				t.logger.WithFields(logrus.Fields{
+					"from":  msg.From,
+					"error": procErr,
+				}).Warn("fromt sign feed failed")
+			}
+			_ = relayClient.DeleteMessageFromServer(sessionID, localPartyID, msg.Hash, msgID)
+			progress = true
+
+			if finished {
+				finalSig, resErr := fromt.SignSessionResult(session)
+				if resErr != nil {
+					return nil, fmt.Errorf("fromt sign result: %w", resErr)
+				}
+				t.logger.WithField("sig_len", len(finalSig)).Info("Fromt signing complete")
+				return &tss.KeysignResponse{
+					Msg: messageHex,
+					R:   hex.EncodeToString(finalSig[:32]),
+					S:   hex.EncodeToString(finalSig[32:]),
+				}, nil
+			}
+		}
+
+		for {
+			outbound, takeErr := fromt.SignSessionTakeMsg(session)
+			if takeErr != nil {
+				return nil, fmt.Errorf("fromt sign take msg: %w", takeErr)
+			}
+			if len(outbound) == 0 {
+				break
+			}
+			t.sendFromtSessionMsg(session, outbound, sessionID, hexEncryptionKey, localPartyID, parties, msgID)
+			progress = true
+		}
+
+		if !progress {
+			time.Sleep(100 * time.Millisecond)
 		}
 	}
+	return nil, fmt.Errorf("fromt sign timeout")
+}
 
-	peerCommitments, err := t.waitForFrostMessages(sessionID, hexEncryptionKey, localPartyID, commitMsgID, len(parties)-1)
-	if err != nil {
-		return nil, fmt.Errorf("fromt commitments: %w", err)
-	}
-
-	allCommitments := make(map[string][]byte)
-	allCommitments[localPartyID] = commitment
-	for k, v := range peerCommitments {
-		allCommitments[k] = v
-	}
-
-	commitmentsMap := buildFromtMap(allCommitments, parties)
-
-	signingPackage, err := fromt.SignCreatePackage(msgBytes, commitmentsMap)
-	if err != nil {
-		return nil, fmt.Errorf("fromt SignCreatePackage: %w", err)
-	}
-
-	signatureShare, err := fromt.Sign(signingPackage, nonces, keyShare)
-	if err != nil {
-		return nil, fmt.Errorf("fromt Sign: %w", err)
-	}
-
-	shareMessenger := relay.NewMessenger(t.cfg.Relay.Server, sessionID, hexEncryptionKey, true, shareMsgID)
-	encodedShare := base64.StdEncoding.EncodeToString(signatureShare)
-	for _, peer := range parties {
-		if peer == localPartyID {
+func (t *DKLSTssService) sendFromtSessionMsg(
+	session *fromt.SessionHandle,
+	msg []byte,
+	sessionID, hexEncryptionKey, localPartyID string,
+	parties []string, msgID string,
+) {
+	messenger := relay.NewMessenger(t.cfg.Relay.Server, sessionID, hexEncryptionKey, true, msgID)
+	encoded := base64.StdEncoding.EncodeToString(msg)
+	for i := range parties {
+		receiver, err := fromt.SignSessionMsgReceiver(session, msg, i)
+		if err != nil {
 			continue
 		}
-		sendErr := shareMessenger.Send(localPartyID, peer, encodedShare)
-		if sendErr != nil {
-			t.logger.WithField("error", sendErr).Error("failed to send fromt share")
+		if len(receiver) == 0 {
+			continue
 		}
+		_ = messenger.Send(localPartyID, string(receiver), encoded)
 	}
-
-	peerShares, err := t.waitForFrostMessages(sessionID, hexEncryptionKey, localPartyID, shareMsgID, len(parties)-1)
-	if err != nil {
-		return nil, fmt.Errorf("fromt shares: %w", err)
-	}
-
-	allShares := make(map[string][]byte)
-	allShares[localPartyID] = signatureShare
-	for k, v := range peerShares {
-		allShares[k] = v
-	}
-
-	sharesMap := buildFromtMap(allShares, parties)
-
-	finalSig, err := fromt.SignAggregate(signingPackage, sharesMap, keyShare)
-	if err != nil {
-		return nil, fmt.Errorf("fromt SignAggregate: %w", err)
-	}
-
-	t.logger.WithField("sig_len", len(finalSig)).Info("Fromt signing complete")
-
-	resp := &tss.KeysignResponse{
-		Msg: messageHex,
-		R:   hex.EncodeToString(finalSig[:32]),
-		S:   hex.EncodeToString(finalSig[32:]),
-	}
-	return resp, nil
 }
