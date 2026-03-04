@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -100,136 +99,148 @@ func (t *DKLSTssService) froztSign(
 		return nil, fmt.Errorf("decode message hex: %w", err)
 	}
 
-	myFrostID := getFrostIdStatic(localPartyID, parties)
-	if myFrostID == 0 {
-		return nil, fmt.Errorf("local party %s not found in parties", localPartyID)
-	}
-
-	nonces, commitment, err := frozt.SignCommit(keyPackage)
+	partyInfos := buildFroztPartyInfos(parties)
+	setup, err := frozt.SignSetupMsgNew(msgBytes, partyInfos)
 	if err != nil {
-		return nil, fmt.Errorf("frozt SignCommit: %w", err)
-	}
-	defer nonces.Close()
-
-	commitMsgID := "frozt-sign-commit-" + messageHex[:8]
-	shareMsgID := "frozt-sign-share-" + messageHex[:8]
-
-	messenger := relay.NewMessenger(t.cfg.Relay.Server, sessionID, hexEncryptionKey, true, commitMsgID)
-	encodedCommitment := base64.StdEncoding.EncodeToString(commitment)
-	for _, peer := range parties {
-		if peer == localPartyID {
-			continue
-		}
-		sendErr := messenger.Send(localPartyID, peer, encodedCommitment)
-		if sendErr != nil {
-			t.logger.WithField("error", sendErr).Error("failed to send frozt commitment")
-		}
+		return nil, fmt.Errorf("frozt sign setup: %w", err)
 	}
 
-	peerCommitments, err := t.waitForFrostMessages(sessionID, hexEncryptionKey, localPartyID, commitMsgID, len(parties)-1)
+	session, err := frozt.SignSessionFromSetup(setup, []byte(localPartyID), keyPackage, pubKeyPackage)
 	if err != nil {
-		return nil, fmt.Errorf("frozt commitments: %w", err)
+		return nil, fmt.Errorf("frozt sign session: %w", err)
 	}
+	defer frozt.SignSessionFree(session)
 
-	allCommitments := make(map[string][]byte)
-	allCommitments[localPartyID] = commitment
-	for k, v := range peerCommitments {
-		allCommitments[k] = v
-	}
+	msgID := "frozt-sign-" + messageHex[:8]
 
-	commitmentsMap := buildFrostMapStatic(allCommitments, parties)
-
-	signingPackage, randomizer, err := frozt.SignNewPackage(msgBytes, commitmentsMap, pubKeyPackage)
+	finalSig, err := t.runFrostSignSession(
+		session, sessionID, hexEncryptionKey, localPartyID, parties, msgID,
+		frozt.SignSessionTakeMsg, frozt.SignSessionFeed, frozt.SignSessionMsgReceiver, frozt.SignSessionResult,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("frozt SignNewPackage: %w", err)
-	}
-
-	signatureShare, err := frozt.Sign(signingPackage, nonces, keyPackage, randomizer)
-	if err != nil {
-		return nil, fmt.Errorf("frozt Sign: %w", err)
-	}
-
-	shareMessenger := relay.NewMessenger(t.cfg.Relay.Server, sessionID, hexEncryptionKey, true, shareMsgID)
-	encodedShare := base64.StdEncoding.EncodeToString(signatureShare)
-	for _, peer := range parties {
-		if peer == localPartyID {
-			continue
-		}
-		sendErr := shareMessenger.Send(localPartyID, peer, encodedShare)
-		if sendErr != nil {
-			t.logger.WithField("error", sendErr).Error("failed to send frozt share")
-		}
-	}
-
-	peerShares, err := t.waitForFrostMessages(sessionID, hexEncryptionKey, localPartyID, shareMsgID, len(parties)-1)
-	if err != nil {
-		return nil, fmt.Errorf("frozt shares: %w", err)
-	}
-
-	allShares := make(map[string][]byte)
-	allShares[localPartyID] = signatureShare
-	for k, v := range peerShares {
-		allShares[k] = v
-	}
-
-	sharesMap := buildFrostMapStatic(allShares, parties)
-
-	finalSig, err := frozt.SignAggregate(signingPackage, sharesMap, pubKeyPackage, randomizer)
-	if err != nil {
-		return nil, fmt.Errorf("frozt SignAggregate: %w", err)
+		return nil, err
 	}
 
 	t.logger.WithField("sig_len", len(finalSig)).Info("Frozt signing complete")
 
-	resp := &tss.KeysignResponse{
+	return &tss.KeysignResponse{
 		Msg: messageHex,
 		R:   hex.EncodeToString(finalSig[:32]),
 		S:   hex.EncodeToString(finalSig[32:]),
-	}
-	return resp, nil
+	}, nil
 }
 
-func (t *DKLSTssService) waitForFrostMessages(
-	sessionID, hexEncryptionKey, localPartyID, msgID string,
-	expected int,
-) (map[string][]byte, error) {
+type signTakeFunc func(frozt.SessionHandle) ([]byte, error)
+type signFeedFunc func(frozt.SessionHandle, []byte) (bool, error)
+type signReceiverFunc func(frozt.SessionHandle, []byte, int) ([]byte, error)
+type signResultFunc func(frozt.SessionHandle) ([]byte, error)
+
+func (t *DKLSTssService) runFrostSignSession(
+	session frozt.SessionHandle,
+	sessionID, hexEncryptionKey, localPartyID string,
+	parties []string, msgID string,
+	takeMsg signTakeFunc,
+	feed signFeedFunc,
+	msgReceiver signReceiverFunc,
+	result signResultFunc,
+) ([]byte, error) {
 	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
-	collected := make(map[string][]byte)
-	start := time.Now()
-	for len(collected) < expected {
-		if time.Since(start) > time.Minute {
-			return nil, fmt.Errorf("timeout waiting for messages (msgID: %s)", msgID)
+	deadline := time.Now().Add(time.Minute)
+
+	for {
+		outbound, err := takeMsg(session)
+		if err != nil {
+			return nil, fmt.Errorf("frozt sign take msg: %w", err)
 		}
+		if len(outbound) == 0 {
+			break
+		}
+		sendErr := t.sendFrostSessionMsg(session, outbound, sessionID, hexEncryptionKey, localPartyID, parties, msgID, msgReceiver)
+		if sendErr != nil {
+			return nil, sendErr
+		}
+	}
+
+	for time.Now().Before(deadline) {
 		messages, dlErr := relayClient.DownloadMessages(sessionID, localPartyID, msgID)
 		if dlErr != nil {
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
-		for _, m := range messages {
-			if m.From == localPartyID {
+
+		progress := false
+		for _, msg := range messages {
+			if msg.From == localPartyID {
 				continue
 			}
-			if _, exists := collected[m.From]; exists {
-				continue
-			}
-			body, decErr := t.decodeDecryptMessage(m.Body, hexEncryptionKey)
+			body, decErr := t.decodeDecryptMessage(msg.Body, hexEncryptionKey)
 			if decErr != nil {
+				_ = relayClient.DeleteMessageFromServer(sessionID, localPartyID, msg.Hash, msgID)
 				continue
 			}
-			collected[m.From] = body
-			_ = relayClient.DeleteMessageFromServer(sessionID, localPartyID, m.Hash, msgID)
+			finished, procErr := feed(session, body)
+			if procErr != nil {
+				t.logger.WithFields(logrus.Fields{
+					"from":  msg.From,
+					"error": procErr,
+				}).Warn("frozt sign feed failed")
+			}
+			_ = relayClient.DeleteMessageFromServer(sessionID, localPartyID, msg.Hash, msgID)
+			progress = true
+
+			if finished {
+				return result(session)
+			}
 		}
-		if len(collected) < expected {
+
+		for {
+			outbound, err := takeMsg(session)
+			if err != nil {
+				return nil, fmt.Errorf("frozt sign take msg: %w", err)
+			}
+			if len(outbound) == 0 {
+				break
+			}
+			sendErr := t.sendFrostSessionMsg(session, outbound, sessionID, hexEncryptionKey, localPartyID, parties, msgID, msgReceiver)
+			if sendErr != nil {
+				return nil, sendErr
+			}
+			progress = true
+		}
+
+		if !progress {
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
-	return collected, nil
+	return nil, fmt.Errorf("frozt sign timeout")
+}
+
+func (t *DKLSTssService) sendFrostSessionMsg(
+	session frozt.SessionHandle,
+	msg []byte,
+	sessionID, hexEncryptionKey, localPartyID string,
+	parties []string, msgID string,
+	msgReceiver signReceiverFunc,
+) error {
+	messenger := relay.NewMessenger(t.cfg.Relay.Server, sessionID, hexEncryptionKey, true, msgID)
+	encoded := base64.StdEncoding.EncodeToString(msg)
+	for i := range parties {
+		receiver, err := msgReceiver(session, msg, i)
+		if err != nil {
+			return fmt.Errorf("frozt sign msg receiver: %w", err)
+		}
+		if len(receiver) == 0 {
+			continue
+		}
+		_ = messenger.Send(localPartyID, string(receiver), encoded)
+	}
+	return nil
 }
 
 func findChainKeyshare(vault *vaultType.Vault, chain string) (string, string, error) {
 	pubKey := ""
 	for _, cpk := range vault.ChainPublicKeys {
-		if strings.EqualFold(cpk.Chain, chain) {
+		if cpk.Chain == chain {
 			pubKey = cpk.PublicKey
 			break
 		}
