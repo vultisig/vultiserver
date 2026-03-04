@@ -23,6 +23,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
+	github.com/vultisig/frost-zm/go v0.0.2 // indirect
 )
 
 require (

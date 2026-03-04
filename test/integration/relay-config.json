@@ -1,0 +1,9 @@
+{
+  "port": 8080,
+  "redis_server": {
+    "addr": "redis-relay:6379",
+    "user": "",
+    "password": "vultisig",
+    "db": 0
+  }
+}

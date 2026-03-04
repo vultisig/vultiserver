@@ -15,4 +15,6 @@ const (
 	TypeCreateMldsa       = "key:createMldsa"
 	TypeKeygenBatch       = "key:keygenBatch"
 	TypeReshareBatch      = "key:reshareBatch"
+	TypeKeySignFrozt      = "key:signFrozt"
+	TypeKeySignFromt      = "key:signFromt"
 )
