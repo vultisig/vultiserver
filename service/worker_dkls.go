@@ -203,22 +203,6 @@ func (s *WorkerService) HandleKeygenBatch(ctx context.Context, t *asynq.Task) er
 		"keyEDDSA": result.EDDSAPublicKey,
 		"phases":   result.Phases,
 	}).Info("batch keygen completed")
-
-	taskResult := KeyGenerationTaskResult{
-		ECDSAPublicKey: result.ECDSAPublicKey,
-		EDDSAPublicKey: result.EDDSAPublicKey,
-	}
-	resultBytes, marshalErr := json.Marshal(taskResult)
-	if marshalErr != nil {
-		s.logger.Errorf("json.Marshal failed: %v", marshalErr)
-		return fmt.Errorf("json.Marshal failed: %v: %w", marshalErr, asynq.SkipRetry)
-	}
-	_, writeErr := t.ResultWriter().Write(resultBytes)
-	if writeErr != nil {
-		s.logger.Errorf("t.ResultWriter.Write failed: %v", writeErr)
-		return fmt.Errorf("t.ResultWriter.Write failed: %v: %w", writeErr, asynq.SkipRetry)
-	}
-
 	return nil
 }
 
