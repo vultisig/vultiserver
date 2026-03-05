@@ -248,6 +248,51 @@ func (s *WorkerService) HandleReshareBatch(ctx context.Context, t *asynq.Task) e
 	return nil
 }
 
+func (s *WorkerService) HandleImportBatch(ctx context.Context, t *asynq.Task) error {
+	cancelErr := contexthelper.CheckCancellation(ctx)
+	if cancelErr != nil {
+		return cancelErr
+	}
+	defer s.measureTime("worker.vault.import.batch.latency", time.Now(), []string{})
+	var req types.BatchImportRequest
+	unmarshalErr := json.Unmarshal(t.Payload(), &req)
+	if unmarshalErr != nil {
+		return fmt.Errorf("json.Unmarshal failed: %v: %w", unmarshalErr, asynq.SkipRetry)
+	}
+	s.logger.WithFields(logrus.Fields{
+		"name":      req.Name,
+		"session":   req.SessionID,
+		"protocols": req.Protocols,
+		"chains":    req.Chains,
+	}).Info("Joining batch import")
+	s.incCounter("worker.vault.import.batch", []string{})
+	validErr := req.IsValid()
+	if validErr != nil {
+		return fmt.Errorf("invalid request: %s: %w", validErr, asynq.SkipRetry)
+	}
+	localStateAccessor, err := relay.NewLocalStateAccessorImp(s.cfg.Server.VaultsFilePath, "", "", s.blockStorage)
+	if err != nil {
+		return fmt.Errorf("relay.NewLocalStateAccessorImp failed: %s: %w", err, asynq.SkipRetry)
+	}
+	dklsService, err := NewDKLSTssService(s.cfg, s.blockStorage, localStateAccessor, s)
+	if err != nil {
+		return fmt.Errorf("NewDKLSTssService failed: %s: %w", err, asynq.SkipRetry)
+	}
+	result, importErr := dklsService.ProcessBatchImport(req)
+	if importErr != nil {
+		s.incCounter("worker.vault.import.batch.error", []string{})
+		s.logger.Errorf("batch import failed: %v", importErr)
+		return fmt.Errorf("batch import failed: %v: %w", importErr, asynq.SkipRetry)
+	}
+
+	s.logger.WithFields(logrus.Fields{
+		"keyECDSA": result.ECDSAPublicKey,
+		"keyEDDSA": result.EDDSAPublicKey,
+		"phases":   result.Phases,
+	}).Info("batch import completed")
+	return nil
+}
+
 func (s *WorkerService) HandleImport(ctx context.Context, t *asynq.Task) error {
 	if err := contexthelper.CheckCancellation(ctx); err != nil {
 		return err

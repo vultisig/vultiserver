@@ -15,4 +15,5 @@ const (
 	TypeCreateMldsa       = "key:createMldsa"
 	TypeKeygenBatch       = "key:keygenBatch"
 	TypeReshareBatch      = "key:reshareBatch"
+	TypeImportBatch       = "key:importBatch"
 )
