@@ -62,7 +62,7 @@ func (req *BatchReshareRequest) IsValid() error {
 	if len(req.Protocols) == 0 {
 		return fmt.Errorf("protocols list is required")
 	}
-	known := map[string]bool{"ecdsa": true, "eddsa": true}
+	known := map[string]bool{"ecdsa": true, "eddsa": true, "frozt": true, "fromt": true}
 	seen := map[string]bool{}
 	for _, p := range req.Protocols {
 		if !known[p] {

@@ -25,6 +25,7 @@ import (
 	"github.com/vultisig/vultiserver/common"
 	"github.com/vultisig/vultiserver/internal/tasks"
 	"github.com/vultisig/vultiserver/internal/types"
+	"github.com/vultisig/vultiserver/service"
 	"github.com/vultisig/vultiserver/storage"
 )
 
@@ -80,19 +81,15 @@ func (s *Server) StartServer() error {
 	grp.POST("/reshare", s.ReshareVault)
 	grp.POST("/migrate", s.MigrateVault)
 	grp.POST("/import", s.ImportVault)
-	// grp.POST("/upload", s.UploadVault)
-	// grp.GET("/download/:publicKeyECDSA", s.DownloadVault)
-	grp.GET("/get/:publicKeyECDSA", s.GetVault)     // Get Vault Data
-	grp.GET("/exist/:publicKeyECDSA", s.ExistVault) // Check if Vault exists
-	//	grp.DELETE("/delete/:publicKeyECDSA", s.DeleteVault) // Delete Vault Data
+	grp.GET("/get/:publicKeyECDSA", s.GetVault)
+	grp.GET("/exist/:publicKeyECDSA", s.ExistVault)
 	grp.POST("/batch/keygen", s.CreateVaultBatch)
 	grp.POST("/batch/reshare", s.ReshareVaultBatch)
 	grp.POST("/batch/import", s.ImportVaultBatch)
-	grp.POST("/mldsa", s.CreateMldsaVault)  // Add MLDSA key to existing vault
-	grp.POST("/sign", s.SignMessages)       // Sign messages
-	grp.POST("/resend", s.ResendVaultEmail) // request server to send vault share , code through email again
+	grp.POST("/mldsa", s.CreateMldsaVault)
+	grp.POST("/sign", s.SignMessages)
+	grp.POST("/resend", s.ResendVaultEmail)
 	grp.GET("/verify/:publicKeyECDSA/:code", s.VerifyCode)
-	// grp.GET("/sign/response/:taskId", s.GetKeysignResult) // Get keysign result
 	return e.Start(fmt.Sprintf(":%d", s.port))
 }
 
@@ -213,7 +210,7 @@ func (s *Server) CreateVaultBatch(c echo.Context) error {
 	}
 	_, err = s.client.Enqueue(asynq.NewTask(tasks.TypeKeygenBatch, buf),
 		asynq.MaxRetry(-1),
-		asynq.Timeout(7*time.Minute),
+		asynq.Timeout(service.KeygenTimeout+5*time.Minute),
 		asynq.Queue(tasks.QUEUE_NAME))
 	if err != nil {
 		return fmt.Errorf("fail to enqueue task, err: %w", err)
@@ -247,7 +244,7 @@ func (s *Server) ReshareVaultBatch(c echo.Context) error {
 	}
 	_, err = s.client.Enqueue(asynq.NewTask(tasks.TypeReshareBatch, buf),
 		asynq.MaxRetry(-1),
-		asynq.Timeout(7*time.Minute),
+		asynq.Timeout(service.KeygenTimeout+5*time.Minute),
 		asynq.Queue(tasks.QUEUE_NAME))
 	if err != nil {
 		return fmt.Errorf("fail to enqueue task, err: %w", err)

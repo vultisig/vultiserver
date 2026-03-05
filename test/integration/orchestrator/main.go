@@ -81,7 +81,7 @@ func main() {
 		failed++
 	}
 
-	if runTest("Test 5: Full batch — all 4 succeed", test5_FullBatch) {
+	if runTest("Test 5: Full batch — all 5 succeed", test5_FullBatch) {
 		passed++
 	} else {
 		failed++
@@ -350,7 +350,30 @@ func test5_FullBatch() bool {
 		fmt.Printf("  OK: both parties produced matching MLDSA key\n")
 	}
 
+	for _, name := range []string{"frozt", "fromt"} {
+		pk1 := phasePublicKey(r1, name)
+		pk2 := phasePublicKey(r2, name)
+		if pk1 == "" || pk2 == "" {
+			fmt.Printf("  FAIL: %s public key missing (pk1=%q, pk2=%q)\n", name, pk1, pk2)
+			ok = false
+		} else if pk1 != pk2 {
+			fmt.Printf("  FAIL: %s keys don't match\n", name)
+			ok = false
+		} else {
+			fmt.Printf("  OK: both parties produced matching %s key\n", name)
+		}
+	}
+
 	return ok
+}
+
+func phasePublicKey(result *TaskResultResponse, name string) string {
+	for _, p := range result.Phases {
+		if p.Name == name && p.Success {
+			return p.PublicKey
+		}
+	}
+	return ""
 }
 
 // --- helpers ---

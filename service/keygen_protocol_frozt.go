@@ -9,12 +9,14 @@ import (
 )
 
 type FroztKeygenProtocol struct {
-	name      string
-	msgID     string
-	session   frozt.SessionHandle
-	finished  bool
-	parties   []string
-	outBuffer []OutboundMsg
+	name         string
+	msgID        string
+	session      frozt.SessionHandle
+	finished     bool
+	parties      []string
+	outBuffer    []OutboundMsg
+	cachedResult *PhaseResult
+	cachedErr    error
 }
 
 func NewFroztKeygenProtocol(
@@ -95,6 +97,14 @@ func (p *FroztKeygenProtocol) ProcessInbound(from string, body []byte) (bool, er
 }
 
 func (p *FroztKeygenProtocol) Result() (*PhaseResult, error) {
+	if p.cachedResult != nil || p.cachedErr != nil {
+		return p.cachedResult, p.cachedErr
+	}
+	p.cachedResult, p.cachedErr = p.computeResult()
+	return p.cachedResult, p.cachedErr
+}
+
+func (p *FroztKeygenProtocol) computeResult() (*PhaseResult, error) {
 	if !p.finished {
 		return nil, fmt.Errorf("frozt not finished")
 	}

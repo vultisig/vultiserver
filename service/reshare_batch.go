@@ -80,7 +80,7 @@ func (t *DKLSTssService) ProcessBatchReshare(req types.BatchReshareRequest) (*Ke
 		return nil, fmt.Errorf("failed to decode setup message: %w", err)
 	}
 
-	protocols, err := t.initReshareProtocols(protocolsToRun, setupMsg, req.LocalPartyId, vault)
+	protocols, err := t.initReshareProtocols(protocolsToRun, setupMsg, req.LocalPartyId, vault, relayClient, req.SessionID, req.HexEncryptionKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init reshare protocols: %w", err)
 	}
@@ -125,10 +125,20 @@ func filterReshareProtocols(requested []string, vault *vaultType.Vault) []string
 func (t *DKLSTssService) initReshareProtocols(
 	names []string, setupMsg []byte, localPartyID string,
 	vault *vaultType.Vault,
+	relayClient *relay.Client, sessionID, hexEncryptionKey string,
 ) ([]KeygenProtocol, error) {
 	var protocols []KeygenProtocol
 	for _, name := range names {
 		protocolSetupMsg := setupMsg
+
+		if name == "frozt" || name == "fromt" {
+			perProtocolSetup, fetchErr := t.fetchProtocolSetupMessage(relayClient, sessionID, hexEncryptionKey, "p-"+name+"-reshare-setup")
+			if fetchErr != nil {
+				freeProtocols(protocols)
+				return nil, fmt.Errorf("init reshare %s: %w", name, fetchErr)
+			}
+			protocolSetupMsg = perProtocolSetup
+		}
 
 		keyshareBytes, err := getVaultKeyshare(vault, name)
 		if err != nil {
@@ -154,6 +164,10 @@ func (t *DKLSTssService) initReshareProtocol(
 		return NewMPCReshareProtocol("ecdsa", "p-ecdsa", setupMsg, localPartyID, keyshareBytes, false)
 	case "eddsa":
 		return NewMPCReshareProtocol("eddsa", "p-eddsa", setupMsg, localPartyID, keyshareBytes, true)
+	case "frozt":
+		return NewFroztReshareProtocol("frozt", "p-frozt", setupMsg, localPartyID, keyshareBytes)
+	case "fromt":
+		return NewFromtReshareProtocol("fromt", "p-fromt", setupMsg, localPartyID, keyshareBytes)
 	default:
 		return nil, fmt.Errorf("reshare not supported for protocol: %s", name)
 	}
@@ -215,6 +229,16 @@ func (t *DKLSTssService) saveResharedVault(
 			vault.PublicKeyEddsa = pr.PublicKey
 		case "mldsa":
 			vault.PublicKeyMldsa44 = pr.PublicKey
+		default:
+			chainName := protocolChainName[name]
+			if chainName != "" {
+				for i, cpk := range vault.ChainPublicKeys {
+					if cpk.Chain == chainName {
+						vault.ChainPublicKeys[i].PublicKey = pr.PublicKey
+						break
+					}
+				}
+			}
 		}
 	}
 
