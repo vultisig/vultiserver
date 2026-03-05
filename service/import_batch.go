@@ -158,7 +158,7 @@ func (t *DKLSTssService) initImportProtocols(
 			freeProtocols(protocols)
 			return nil, fmt.Errorf("setup for %s: %w", def.name, err)
 		}
-		p, err := NewMPCImportProtocol(def.name, def.messageID, setupMsg, localPartyID, def.isEdDSA)
+		p, err := t.initImportProtocol(def, setupMsg, localPartyID)
 		if err != nil {
 			freeProtocols(protocols)
 			return nil, fmt.Errorf("init import %s: %w", def.name, err)
@@ -166,6 +166,17 @@ func (t *DKLSTssService) initImportProtocols(
 		protocols = append(protocols, p)
 	}
 	return protocols, nil
+}
+
+func (t *DKLSTssService) initImportProtocol(def importProtocolDef, setupMsg []byte, localPartyID string) (KeygenProtocol, error) {
+	switch def.name {
+	case "frozt":
+		return NewFroztImportProtocol(def.name, def.messageID, setupMsg, localPartyID)
+	case "fromt":
+		return NewFromtImportProtocol(def.name, def.messageID, setupMsg, localPartyID)
+	default:
+		return NewMPCImportProtocol(def.name, def.messageID, setupMsg, localPartyID, def.isEdDSA)
+	}
 }
 
 func (t *DKLSTssService) saveImportedVault(
@@ -199,6 +210,13 @@ func (t *DKLSTssService) saveImportedVault(
 			vault.HexChainCode = pr.ChainCode
 		case "eddsa":
 			vault.PublicKeyEddsa = pr.PublicKey
+		default:
+			chainName := protocolChainName[name]
+			if chainName != "" {
+				vault.ChainPublicKeys = append(vault.ChainPublicKeys,
+					&vaultType.Vault_ChainPublicKey{Chain: chainName, PublicKey: pr.PublicKey},
+				)
+			}
 		}
 	}
 
