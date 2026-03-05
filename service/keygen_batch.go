@@ -46,6 +46,12 @@ func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*Keyge
 			return nil, fmt.Errorf("failed to load vault: %w", err)
 		}
 		existingVault = accessor.Vault
+		if req.LocalPartyId == "" {
+			req.LocalPartyId = existingVault.LocalPartyId
+		}
+		if req.LocalPartyId == "" {
+			return nil, fmt.Errorf("local_party_id is required")
+		}
 		protocolsToRun = filterNewProtocols(req.Protocols, existingVault)
 		if len(protocolsToRun) == 0 {
 			return allSkippedResult(req.Protocols), nil
@@ -63,6 +69,15 @@ func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*Keyge
 	if err != nil {
 		return nil, fmt.Errorf("failed to register session: %w", err)
 	}
+	defer func() {
+		completeErr := relayClient.CompleteSession(req.SessionID, req.LocalPartyId)
+		if completeErr != nil {
+			t.logger.WithFields(logrus.Fields{
+				"session": req.SessionID,
+				"error":   completeErr,
+			}).Warn("failed to complete session")
+		}
+	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -105,14 +120,6 @@ func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*Keyge
 				return nil, fmt.Errorf("ecdsa keygen failed — cannot create vault")
 			}
 		}
-	}
-
-	completeErr := relayClient.CompleteSession(req.SessionID, req.LocalPartyId)
-	if completeErr != nil {
-		t.logger.WithFields(logrus.Fields{
-			"session": req.SessionID,
-			"error":   completeErr,
-		}).Error("Failed to complete session")
 	}
 
 	_, checkErr := relayClient.CheckCompletedParties(req.SessionID, partiesJoined)

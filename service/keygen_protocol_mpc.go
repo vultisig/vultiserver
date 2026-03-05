@@ -108,6 +108,9 @@ func (p *MPCKeygenProtocol) Result() (*PhaseResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s finish: %w", p.name, err)
 	}
+	defer func() {
+		_ = p.wrapper.KeyshareFree(keyshareHandle)
+	}()
 
 	buf, err := p.wrapper.KeyshareToBytes(keyshareHandle)
 	if err != nil {
