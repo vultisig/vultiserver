@@ -32,10 +32,11 @@ func (t *DKLSTssService) ProcessBatchReshare(req types.BatchReshareRequest) (*Ke
 		return nil, fmt.Errorf("local_party_id is required")
 	}
 
-	protocolsToRun := filterReshareProtocols(req.Protocols, vault)
-	if len(protocolsToRun) == 0 {
-		return nil, fmt.Errorf("no protocols to reshare — requested protocols not found in vault")
+	err = validateReshareProtocols(req.Protocols, vault)
+	if err != nil {
+		return nil, err
 	}
+	protocolsToRun := req.Protocols
 
 	serverURL := t.cfg.Relay.Server
 	relayClient := relay.NewRelayClient(serverURL)
@@ -98,11 +99,11 @@ func (t *DKLSTssService) ProcessBatchReshare(req types.BatchReshareRequest) (*Ke
 
 	result := t.collectResults(protocols, req.Protocols, protocolsToRun)
 
-	if len(protocolsToRun) > 0 && !hasAnySuccess(result) {
-		return result, fmt.Errorf("all reshare protocols failed")
+	if !allSucceeded(result, protocolsToRun) {
+		return result, fmt.Errorf("reshare failed: all protocols must complete successfully")
 	}
 
-	if t.backup != nil && hasAnySuccess(result) {
+	if t.backup != nil {
 		backupErr := t.saveResharedVault(req, partiesJoined, vault, result)
 		if backupErr != nil {
 			return nil, fmt.Errorf("failed to store reshared vault: %w", backupErr)
@@ -112,14 +113,26 @@ func (t *DKLSTssService) ProcessBatchReshare(req types.BatchReshareRequest) (*Ke
 	return result, nil
 }
 
-func filterReshareProtocols(requested []string, vault *vaultType.Vault) []string {
-	var valid []string
+func validateReshareProtocols(requested []string, vault *vaultType.Vault) error {
+	if len(requested) == 0 {
+		return fmt.Errorf("protocols list is required for reshare")
+	}
 	for _, name := range requested {
-		if vaultHasProtocol(vault, name) {
-			valid = append(valid, name)
+		if protocolPublicKey(vault, name) == "" {
+			return fmt.Errorf("vault does not have protocol %s — cannot reshare", name)
 		}
 	}
-	return valid
+	return nil
+}
+
+func allSucceeded(result *KeygenResult, protocols []string) bool {
+	for _, name := range protocols {
+		pr := result.phaseResults[name]
+		if pr == nil {
+			return false
+		}
+	}
+	return true
 }
 
 func (t *DKLSTssService) initReshareProtocols(

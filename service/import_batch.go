@@ -17,7 +17,7 @@ import (
 )
 
 func (t *DKLSTssService) ProcessBatchImport(req types.BatchImportRequest) (*KeygenResult, error) {
-	if !containsProtocol(req.Protocols, "ecdsa") {
+	if !types.ContainsProtocol(req.Protocols, "ecdsa") {
 		return nil, fmt.Errorf("ecdsa is required for import")
 	}
 

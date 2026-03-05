@@ -135,16 +135,12 @@ func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*Keyge
 func filterNewProtocols(requested []string, vault *vaultType.Vault) []string {
 	var needed []string
 	for _, name := range requested {
-		if vaultHasProtocol(vault, name) {
+		if protocolPublicKey(vault, name) != "" {
 			continue
 		}
 		needed = append(needed, name)
 	}
 	return needed
-}
-
-func vaultHasProtocol(vault *vaultType.Vault, name string) bool {
-	return protocolPublicKey(vault, name) != ""
 }
 
 func protocolPublicKey(vault *vaultType.Vault, protocol string) string {
@@ -158,15 +154,6 @@ func protocolPublicKey(vault *vaultType.Vault, protocol string) string {
 	default:
 		return ""
 	}
-}
-
-func containsProtocol(list []string, name string) bool {
-	for _, s := range list {
-		if s == name {
-			return true
-		}
-	}
-	return false
 }
 
 func allSkippedResult(requested []string) *KeygenResult {
@@ -379,7 +366,7 @@ func (t *DKLSTssService) sendMessages(
 
 func (t *DKLSTssService) notifyStatus(
 	sessionID, hexEncryptionKey, localPartyID string,
-	parties []string, protocol, status, errMsg, publicKey string,
+	parties []string, protocol string, status StatusKind, errMsg, publicKey string,
 ) {
 	msg := ProtocolStatus{
 		Protocol:  protocol,

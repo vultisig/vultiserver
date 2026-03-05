@@ -1,6 +1,7 @@
 package service
 
 import (
+	"log"
 	"os"
 	"strconv"
 	"time"
@@ -9,25 +10,33 @@ import (
 var KeygenTimeout = getKeygenTimeout()
 
 func getKeygenTimeout() time.Duration {
-	if v := os.Getenv("KEYGEN_TIMEOUT_MINUTES"); v != "" {
-		if m, err := strconv.Atoi(v); err == nil && m > 0 {
-			return time.Duration(m) * time.Minute
-		}
+	v := os.Getenv("KEYGEN_TIMEOUT_MINUTES")
+	if v == "" {
+		return 3 * time.Minute
 	}
-	return 3 * time.Minute
+	m, err := strconv.Atoi(v)
+	if err != nil || m <= 0 {
+		log.Printf("invalid KEYGEN_TIMEOUT_MINUTES=%q, using default 3m", v)
+		return 3 * time.Minute
+	}
+	return time.Duration(m) * time.Minute
 }
 
+const PollInterval = 100 * time.Millisecond
+
+type StatusKind string
+
 const (
-	PollInterval    = 100 * time.Millisecond
-	StatusDone      = "done"
-	StatusFailed    = "failed"
-	StatusTimeout   = "timeout"
-	StatusMessageID = "batch-status"
+	StatusDone    StatusKind = "done"
+	StatusFailed  StatusKind = "failed"
+	StatusTimeout StatusKind = "timeout"
 )
 
+const StatusMessageID = "batch-status"
+
 type ProtocolStatus struct {
-	Protocol  string `json:"protocol"`
-	Status    string `json:"status"`
+	Protocol  string     `json:"protocol"`
+	Status    StatusKind `json:"status"`
 	Error     string `json:"error,omitempty"`
 	PublicKey string `json:"public_key,omitempty"`
 }

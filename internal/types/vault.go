@@ -106,6 +106,15 @@ type BatchVaultRequest struct {
 }
 
 func (req *BatchVaultRequest) IsValid() error {
+	if req.PublicKey != "" {
+		if len(req.PublicKey) != 66 {
+			return fmt.Errorf("public_key must be 66 hex characters")
+		}
+		_, hexErr := hex.DecodeString(req.PublicKey)
+		if hexErr != nil {
+			return fmt.Errorf("public_key is not valid hex")
+		}
+	}
 	err := req.VaultCreateRequest.IsValid()
 	if err != nil {
 		return err
@@ -113,10 +122,10 @@ func (req *BatchVaultRequest) IsValid() error {
 	if len(req.Protocols) == 0 {
 		return fmt.Errorf("protocols list is required")
 	}
-	if !containsBatchProtocol(req.Protocols, "ecdsa") {
+	if !ContainsProtocol(req.Protocols, "ecdsa") {
 		return fmt.Errorf("ecdsa is required")
 	}
-	if !containsBatchProtocol(req.Protocols, "eddsa") {
+	if !ContainsProtocol(req.Protocols, "eddsa") {
 		return fmt.Errorf("eddsa is required")
 	}
 	seen := map[string]bool{}
@@ -132,7 +141,7 @@ func (req *BatchVaultRequest) IsValid() error {
 	return nil
 }
 
-func containsBatchProtocol(list []string, name string) bool {
+func ContainsProtocol(list []string, name string) bool {
 	for _, s := range list {
 		if s == name {
 			return true

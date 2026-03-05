@@ -54,24 +54,24 @@ func (p *MPCKeygenProtocol) MessageID() string  { return p.msgID }
 func (p *MPCKeygenProtocol) IsFinished() bool   { return p.finished }
 
 func (p *MPCKeygenProtocol) DrainOutbound(parties []string) ([]OutboundMsg, error) {
-	buffered := p.outBuffer
-	p.outBuffer = nil
+	msgs := p.outBuffer
+	p.outBuffer = nil // take ownership; callers receive all buffered + new messages
 
 	for {
 		outbound, err := p.wrapper.KeygenSessionOutputMessage(p.handle)
 		if err != nil {
-			return buffered, fmt.Errorf("%s output message: %w", p.name, err)
+			return msgs, fmt.Errorf("%s output message: %w", p.name, err)
 		}
 		if len(outbound) == 0 {
 			break
 		}
-		msgs, err := p.resolveReceivers(outbound, parties)
+		resolved, err := p.resolveReceivers(outbound, parties)
 		if err != nil {
-			return buffered, err
+			return msgs, err
 		}
-		buffered = append(buffered, msgs...)
+		msgs = append(msgs, resolved...)
 	}
-	return buffered, nil
+	return msgs, nil
 }
 
 func (p *MPCKeygenProtocol) resolveReceivers(outbound []byte, parties []string) ([]OutboundMsg, error) {
