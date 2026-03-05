@@ -8,12 +8,14 @@ import (
 )
 
 type FromtKeygenProtocol struct {
-	name      string
-	msgID     string
-	session   *fromt.SessionHandle
-	finished  bool
-	parties   []string
-	outBuffer []OutboundMsg
+	name         string
+	msgID        string
+	session      *fromt.SessionHandle
+	finished     bool
+	parties      []string
+	outBuffer    []OutboundMsg
+	cachedResult *PhaseResult
+	cachedErr    error
 }
 
 func NewFromtKeygenProtocol(
@@ -94,6 +96,14 @@ func (p *FromtKeygenProtocol) ProcessInbound(from string, body []byte) (bool, er
 }
 
 func (p *FromtKeygenProtocol) Result() (*PhaseResult, error) {
+	if p.cachedResult != nil || p.cachedErr != nil {
+		return p.cachedResult, p.cachedErr
+	}
+	p.cachedResult, p.cachedErr = p.computeResult()
+	return p.cachedResult, p.cachedErr
+}
+
+func (p *FromtKeygenProtocol) computeResult() (*PhaseResult, error) {
 	if !p.finished {
 		return nil, fmt.Errorf("fromt not finished")
 	}

@@ -9,15 +9,18 @@ COPY vultiserver/ vultiserver/
 
 WORKDIR /build/vultiserver
 
+RUN sed -i 's|github.com/vultisig/frost-zm/go => .*|github.com/vultisig/frost-zm/go => /build/frost-zm/go|' go.mod
 RUN go mod download
 RUN CGO_ENABLED=1 CC=clang go build -o /out/api cmd/vultisigner/main.go
 RUN CGO_ENABLED=1 CC=clang go build -o /out/worker cmd/worker/main.go
 
-RUN mkdir -p /out/libs && \
-    cp /build/frost-zm/go/frozt/includes/linux-amd64/libfroztlib.so /out/libs/ 2>/dev/null || true && \
-    cp /build/frost-zm/go/fromt/includes/linux-amd64/libfromtlib.so /out/libs/ 2>/dev/null || true && \
+RUN ARCH=$(dpkg --print-architecture) && \
+    mkdir -p /out/libs && \
+    if [ "$ARCH" = "arm64" ]; then LIBARCH="linux-arm64"; else LIBARCH="linux-amd64"; fi && \
+    cp /build/frost-zm/go/frozt/includes/$LIBARCH/libfroztlib.so /out/libs/ 2>/dev/null || true && \
+    cp /build/frost-zm/go/fromt/includes/$LIBARCH/libfromtlib.so /out/libs/ 2>/dev/null || true && \
     find /go/pkg/mod -path "*/go-wrappers*/includes/linux/lib*.so" -exec cp {} /out/libs/ \; 2>/dev/null || true && \
-    find /go/pkg/mod -path "*/go-wrappers*/includes/linux-amd64/lib*.so" -exec cp {} /out/libs/ \; 2>/dev/null || true && \
+    find /go/pkg/mod -path "*/go-wrappers*/includes/$LIBARCH/lib*.so" -exec cp {} /out/libs/ \; 2>/dev/null || true && \
     ls -la /out/libs/
 
 FROM debian:trixie-slim

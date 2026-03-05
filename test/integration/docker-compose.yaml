@@ -83,6 +83,7 @@ services:
       - VAULTS_PATH=/data/vaults
       - REDIS_HOST=redis-vs1
       - BUCKET_NAME=vultiserver1
+      - KEYGEN_TIMEOUT_MINUTES=10
     volumes:
       - vaults1:/data/vaults
 
@@ -102,6 +103,7 @@ services:
       - VAULTS_PATH=/data/vaults
       - REDIS_HOST=redis-vs2
       - BUCKET_NAME=vultiserver2
+      - KEYGEN_TIMEOUT_MINUTES=10
     volumes:
       - vaults2:/data/vaults
 

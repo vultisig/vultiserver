@@ -167,22 +167,18 @@ func protocolPublicKey(vault *vaultType.Vault, protocol string) string {
 		return vault.PublicKeyEddsa
 	case "mldsa":
 		return vault.PublicKeyMldsa44
-	case "frozt":
-		return chainPublicKey(vault, "ZcashSapling")
-	case "fromt":
-		return chainPublicKey(vault, "Monero")
 	default:
+		chainName := protocolChainName[protocol]
+		if chainName == "" {
+			return ""
+		}
+		for _, cpk := range vault.ChainPublicKeys {
+			if cpk.Chain == chainName {
+				return cpk.PublicKey
+			}
+		}
 		return ""
 	}
-}
-
-func chainPublicKey(vault *vaultType.Vault, chain string) string {
-	for _, cpk := range vault.ChainPublicKeys {
-		if cpk.Chain == chain {
-			return cpk.PublicKey
-		}
-	}
-	return ""
 }
 
 func containsProtocol(list []string, name string) bool {
