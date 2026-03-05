@@ -97,6 +97,8 @@ func (req *CreateMldsaRequest) IsValid() error {
 	return nil
 }
 
+var KnownBatchProtocols = map[string]bool{"ecdsa": true, "eddsa": true, "mldsa": true}
+
 type BatchVaultRequest struct {
 	VaultCreateRequest
 	Protocols []string `json:"protocols"`
@@ -104,19 +106,22 @@ type BatchVaultRequest struct {
 }
 
 func (req *BatchVaultRequest) IsValid() error {
-	if req.PublicKey == "" {
-		err := req.VaultCreateRequest.IsValid()
-		if err != nil {
-			return err
-		}
+	err := req.VaultCreateRequest.IsValid()
+	if err != nil {
+		return err
 	}
 	if len(req.Protocols) == 0 {
 		return fmt.Errorf("protocols list is required")
 	}
-	known := map[string]bool{"ecdsa": true, "eddsa": true, "mldsa": true}
+	if !containsBatchProtocol(req.Protocols, "ecdsa") {
+		return fmt.Errorf("ecdsa is required")
+	}
+	if !containsBatchProtocol(req.Protocols, "eddsa") {
+		return fmt.Errorf("eddsa is required")
+	}
 	seen := map[string]bool{}
 	for _, p := range req.Protocols {
-		if !known[p] {
+		if !KnownBatchProtocols[p] {
 			return fmt.Errorf("unknown protocol: %s", p)
 		}
 		if seen[p] {
@@ -125,6 +130,15 @@ func (req *BatchVaultRequest) IsValid() error {
 		seen[p] = true
 	}
 	return nil
+}
+
+func containsBatchProtocol(list []string, name string) bool {
+	for _, s := range list {
+		if s == name {
+			return true
+		}
+	}
+	return false
 }
 
 // VaultCreateResponse is a struct that represents a response to create a new vault

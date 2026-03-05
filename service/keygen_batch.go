@@ -40,13 +40,6 @@ func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*Keyge
 		if len(protocolsToRun) == 0 {
 			return allSkippedResult(req.Protocols), nil
 		}
-	} else {
-		if !containsProtocol(req.Protocols, "ecdsa") {
-			return nil, fmt.Errorf("ecdsa is required for new vault")
-		}
-		if req.LocalPartyId == "" {
-			return nil, fmt.Errorf("local_party_id is required for new vault")
-		}
 	}
 
 	serverURL := t.cfg.Relay.Server
