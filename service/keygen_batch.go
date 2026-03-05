@@ -2,9 +2,8 @@ package service
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -234,164 +233,39 @@ func (t *DKLSTssService) runKeygen(
 	sessionID, hexEncryptionKey, localPartyID string,
 	parties []string,
 ) {
-	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
-	deadline := time.Now().Add(KeygenTimeout)
-	failedNotified := make(map[string]bool)
+	ctx, cancel := context.WithTimeout(context.Background(), KeygenTimeout)
+	defer cancel()
 
+	relayServer := t.cfg.Relay.Server
+	sendFn := func(msgID string, msgs []OutboundMsg, sid, encKey, localID string, pts []string) error {
+		return encryptAndSendMessages(relayServer, sid, encKey, true, msgID, msgs, localID, pts)
+	}
+	notifyFn := notifyStatusViaRelay(sendFn, sessionID, hexEncryptionKey, localPartyID, parties, t.logger)
+
+	ex := ProtocolExchanger{
+		RelayClient:      relay.NewRelayClient(relayServer),
+		RelayServer:      relayServer,
+		SessionID:        sessionID,
+		HexEncryptionKey: hexEncryptionKey,
+		LocalPartyID:     localPartyID,
+		Parties:          parties,
+		DecryptFn:        t.decodeDecryptMessage,
+		SendFn:           sendFn,
+		NotifyFn:         notifyFn,
+		Logger:           t.logger,
+	}
+
+	var wg sync.WaitGroup
 	for _, p := range protocols {
-		outbound, err := p.DrainOutbound(parties)
-		if len(outbound) > 0 {
-			sendErr := t.sendMessages(p.MessageID(), outbound, sessionID, hexEncryptionKey, localPartyID, parties)
-			if sendErr != nil {
-				t.logger.WithFields(logrus.Fields{
-					"protocol": p.Name(),
-					"error":    sendErr,
-				}).Warn("initial send outbound failed")
-			}
-		}
-		if err != nil {
-			t.logger.WithFields(logrus.Fields{
-				"protocol": p.Name(),
-				"error":    err,
-			}).Error("initial drain outbound failed")
-		}
+		wg.Add(1)
+		go func(p KeygenProtocol) {
+			defer wg.Done()
+			runProtocolExchange(ctx, p, ex)
+		}(p)
 	}
+	wg.Wait()
 
-	for time.Now().Before(deadline) {
-		if allFinished(protocols) {
-			t.logger.Info("all protocols finished")
-			return
-		}
-
-		progress := false
-		for _, p := range protocols {
-			if p.IsFinished() {
-				continue
-			}
-			messages, dlErr := relayClient.DownloadMessages(sessionID, localPartyID, p.MessageID())
-			if dlErr != nil {
-				continue
-			}
-			for _, msg := range messages {
-				if msg.From == localPartyID {
-					continue
-				}
-				body, decErr := t.decodeDecryptMessage(msg.Body, hexEncryptionKey)
-				if decErr != nil {
-					_ = relayClient.DeleteMessageFromServer(sessionID, localPartyID, msg.Hash, p.MessageID())
-					continue
-				}
-				finished, procErr := p.ProcessInbound(msg.From, body)
-				if procErr != nil {
-					t.logger.WithFields(logrus.Fields{
-						"protocol": p.Name(),
-						"from":     msg.From,
-						"error":    procErr,
-					}).Warn("process inbound failed")
-					if !failedNotified[p.Name()] {
-						t.notifyStatus(sessionID, hexEncryptionKey, localPartyID, parties, p.Name(), StatusFailed, procErr.Error(), "")
-						failedNotified[p.Name()] = true
-					}
-				}
-				_ = relayClient.DeleteMessageFromServer(sessionID, localPartyID, msg.Hash, p.MessageID())
-				progress = true
-				if finished {
-					publicKey := ""
-					pr, resultErr := p.Result()
-					if resultErr == nil {
-						publicKey = pr.PublicKey
-					}
-					t.logger.WithFields(logrus.Fields{
-						"protocol":  p.Name(),
-						"publicKey": publicKey,
-					}).Info("protocol finished")
-					t.notifyStatus(sessionID, hexEncryptionKey, localPartyID, parties, p.Name(), StatusDone, "", publicKey)
-					break
-				}
-			}
-			newOutbound, drainErr := p.DrainOutbound(parties)
-			if len(newOutbound) > 0 {
-				sendErr := t.sendMessages(p.MessageID(), newOutbound, sessionID, hexEncryptionKey, localPartyID, parties)
-				if sendErr != nil {
-					t.logger.WithFields(logrus.Fields{"protocol": p.Name(), "error": sendErr}).Warn("send outbound failed")
-				} else {
-					progress = true
-				}
-			}
-			if drainErr != nil {
-				t.logger.WithFields(logrus.Fields{"protocol": p.Name(), "error": drainErr}).Warn("drain outbound failed")
-			}
-		}
-
-		if !progress {
-			time.Sleep(PollInterval)
-		}
-	}
-
-	for _, p := range protocols {
-		if !p.IsFinished() && !failedNotified[p.Name()] {
-			t.notifyStatus(sessionID, hexEncryptionKey, localPartyID, parties, p.Name(), StatusTimeout, "", "")
-		}
-	}
-}
-
-func (t *DKLSTssService) sendMessages(
-	messageID string,
-	messages []OutboundMsg,
-	sessionID, hexEncryptionKey, localPartyID string,
-	parties []string,
-) error {
-	messenger := relay.NewMessenger(t.cfg.Relay.Server, sessionID, hexEncryptionKey, true, messageID)
-	for _, msg := range messages {
-		body := base64.StdEncoding.EncodeToString(msg.Body)
-		if msg.To == "" {
-			for _, peer := range parties {
-				if peer == localPartyID {
-					continue
-				}
-				err := messenger.Send(localPartyID, peer, body)
-				if err != nil {
-					return fmt.Errorf("send to %s: %w", peer, err)
-				}
-			}
-		} else {
-			err := messenger.Send(localPartyID, msg.To, body)
-			if err != nil {
-				return fmt.Errorf("send to %s: %w", msg.To, err)
-			}
-		}
-	}
-	return nil
-}
-
-func (t *DKLSTssService) notifyStatus(
-	sessionID, hexEncryptionKey, localPartyID string,
-	parties []string, protocol string, status StatusKind, errMsg, publicKey string,
-) {
-	msg := ProtocolStatus{
-		Protocol:  protocol,
-		Status:    status,
-		Error:     errMsg,
-		PublicKey: publicKey,
-	}
-	body, err := json.Marshal(msg)
-	if err != nil {
-		t.logger.WithFields(logrus.Fields{"protocol": protocol, "error": err}).Warn("failed to marshal status")
-		return
-	}
-	sendErr := t.sendMessages(StatusMessageID, []OutboundMsg{{Body: body}}, sessionID, hexEncryptionKey, localPartyID, parties)
-	if sendErr != nil {
-		t.logger.WithFields(logrus.Fields{"protocol": protocol, "status": status, "error": sendErr}).Warn("failed to send status notification")
-	}
-}
-
-func allFinished(protocols []KeygenProtocol) bool {
-	for _, p := range protocols {
-		if !p.IsFinished() {
-			return false
-		}
-	}
-	return true
+	t.logger.Info("all protocol goroutines finished")
 }
 
 func (t *DKLSTssService) collectResults(protocols []KeygenProtocol, allRequested, actuallyRan []string) *KeygenResult {

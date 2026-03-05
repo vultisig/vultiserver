@@ -19,7 +19,6 @@ type MPCKeygenProtocol struct {
 	finished     bool
 	failed       bool
 	lastErr      error
-	outBuffer    []OutboundMsg
 	cachedResult *PhaseResult
 	cachedErr    error
 }
@@ -54,9 +53,7 @@ func (p *MPCKeygenProtocol) MessageID() string  { return p.msgID }
 func (p *MPCKeygenProtocol) IsFinished() bool   { return p.finished }
 
 func (p *MPCKeygenProtocol) DrainOutbound(parties []string) ([]OutboundMsg, error) {
-	msgs := p.outBuffer
-	p.outBuffer = nil // take ownership; callers receive all buffered + new messages
-
+	var msgs []OutboundMsg
 	for {
 		outbound, err := p.wrapper.KeygenSessionOutputMessage(p.handle)
 		if err != nil {
