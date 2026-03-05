@@ -97,6 +97,59 @@ func (req *CreateMldsaRequest) IsValid() error {
 	return nil
 }
 
+var KnownBatchProtocols = map[string]bool{"ecdsa": true, "eddsa": true, "mldsa": true}
+
+type BatchVaultRequest struct {
+	VaultCreateRequest
+	Protocols []string `json:"protocols"`
+	PublicKey string   `json:"public_key,omitempty"`
+}
+
+func (req *BatchVaultRequest) IsValid() error {
+	if req.PublicKey != "" {
+		if len(req.PublicKey) != 66 {
+			return fmt.Errorf("public_key must be 66 hex characters")
+		}
+		_, hexErr := hex.DecodeString(req.PublicKey)
+		if hexErr != nil {
+			return fmt.Errorf("public_key is not valid hex")
+		}
+	}
+	err := req.VaultCreateRequest.IsValid()
+	if err != nil {
+		return err
+	}
+	if len(req.Protocols) == 0 {
+		return fmt.Errorf("protocols list is required")
+	}
+	if !ContainsProtocol(req.Protocols, "ecdsa") {
+		return fmt.Errorf("ecdsa is required")
+	}
+	if !ContainsProtocol(req.Protocols, "eddsa") {
+		return fmt.Errorf("eddsa is required")
+	}
+	seen := map[string]bool{}
+	for _, p := range req.Protocols {
+		if !KnownBatchProtocols[p] {
+			return fmt.Errorf("unknown protocol: %s", p)
+		}
+		if seen[p] {
+			return fmt.Errorf("duplicate protocol: %s", p)
+		}
+		seen[p] = true
+	}
+	return nil
+}
+
+func ContainsProtocol(list []string, name string) bool {
+	for _, s := range list {
+		if s == name {
+			return true
+		}
+	}
+	return false
+}
+
 // VaultCreateResponse is a struct that represents a response to create a new vault
 // integration partner need to use this information to construct a QR Code , so vultisig device can participate in the vault creation process.
 type VaultCreateResponse struct {
