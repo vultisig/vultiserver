@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"time"
@@ -178,7 +179,12 @@ func (t *DKLSTssService) runFrostSignSession(
 				_ = relayClient.DeleteMessageFromServer(sessionID, localPartyID, msg.Hash, msgID)
 				continue
 			}
-			finished, procErr := feed(session, body)
+			senderID := getFrostIdStatic(msg.From, parties)
+			frame := make([]byte, 2+len(body))
+			binary.LittleEndian.PutUint16(frame, senderID)
+			copy(frame[2:], body)
+
+			finished, procErr := feed(session, frame)
 			if procErr != nil {
 				t.logger.WithFields(logrus.Fields{
 					"from":  msg.From,
@@ -222,8 +228,9 @@ func (t *DKLSTssService) sendFrostSessionMsg(
 	parties []string, msgID string,
 	msgReceiver signReceiverFunc,
 ) error {
+	payload := msg[2:]
 	messenger := relay.NewMessenger(t.cfg.Relay.Server, sessionID, hexEncryptionKey, true, msgID)
-	encoded := base64.StdEncoding.EncodeToString(msg)
+	encoded := base64.StdEncoding.EncodeToString(payload)
 	for i := range parties {
 		receiver, err := msgReceiver(session, msg, i)
 		if err != nil {

@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 
 	frozt "github.com/vultisig/frost-zm/go/frozt"
@@ -12,6 +13,7 @@ type FroztImportProtocol struct {
 	msgID        string
 	session      frozt.SessionHandle
 	finished     bool
+	parties      []string
 	outBuffer    []OutboundMsg
 	cachedResult *PhaseResult
 	cachedErr    error
@@ -38,6 +40,7 @@ func (p *FroztImportProtocol) MessageID() string { return p.msgID }
 func (p *FroztImportProtocol) IsFinished() bool  { return p.finished }
 
 func (p *FroztImportProtocol) DrainOutbound(parties []string) ([]OutboundMsg, error) {
+	p.parties = parties
 	buffered := p.outBuffer
 	p.outBuffer = nil
 
@@ -59,6 +62,7 @@ func (p *FroztImportProtocol) DrainOutbound(parties []string) ([]OutboundMsg, er
 }
 
 func (p *FroztImportProtocol) resolveReceivers(msg []byte, parties []string) ([]OutboundMsg, error) {
+	payload := msg[2:]
 	var msgs []OutboundMsg
 	for i := range parties {
 		receiver, err := frozt.KeyImportSessionMsgReceiver(p.session, msg, i)
@@ -68,13 +72,21 @@ func (p *FroztImportProtocol) resolveReceivers(msg []byte, parties []string) ([]
 		if len(receiver) == 0 {
 			continue
 		}
-		msgs = append(msgs, OutboundMsg{To: string(receiver), Body: msg})
+		msgs = append(msgs, OutboundMsg{To: string(receiver), Body: payload})
 	}
 	return msgs, nil
 }
 
 func (p *FroztImportProtocol) ProcessInbound(from string, body []byte) (bool, error) {
-	finished, err := frozt.KeyImportSessionFeed(p.session, body)
+	senderID := getFrostIdStatic(from, p.parties)
+	if senderID == 0 {
+		return false, fmt.Errorf("frozt import: unknown sender %s", from)
+	}
+	frame := make([]byte, 2+len(body))
+	binary.LittleEndian.PutUint16(frame, senderID)
+	copy(frame[2:], body)
+
+	finished, err := frozt.KeyImportSessionFeed(p.session, frame)
 	if err != nil {
 		return false, fmt.Errorf("frozt import feed from %s: %w", from, err)
 	}
