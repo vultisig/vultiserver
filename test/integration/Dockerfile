@@ -1,3 +1,21 @@
+FROM rust:latest AS rust-builder
+
+RUN apt-get update && apt-get install -y clang && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY frost-zm/ frost-zm/
+
+WORKDIR /build/frost-zm
+RUN cargo build --release -p frozt-lib -p fromt-lib
+
+RUN mkdir -p /out/libs && \
+    cp target/release/libfroztlib.so /out/libs/ && \
+    cp target/release/libfromtlib.so /out/libs/
+
+RUN mkdir -p /out/frozt-includes /out/fromt-includes && \
+    cp target/release/libfroztlib.so /out/frozt-includes/ && \
+    cp target/release/libfromtlib.so /out/fromt-includes/
+
 FROM golang:latest AS builder
 
 RUN apt-get update && apt-get install -y clang && rm -rf /var/lib/apt/lists/*
@@ -5,6 +23,9 @@ RUN apt-get update && apt-get install -y clang && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 
 COPY frost-zm/go/ frost-zm/go/
+COPY --from=rust-builder /out/frozt-includes/libfroztlib.so frost-zm/go/frozt/includes/linux-amd64/
+COPY --from=rust-builder /out/fromt-includes/libfromtlib.so frost-zm/go/fromt/includes/linux-amd64/
+
 COPY vultiserver/ vultiserver/
 
 WORKDIR /build/vultiserver
@@ -14,8 +35,8 @@ RUN go mod download
 RUN CGO_ENABLED=1 CC=clang go build -o /out/api cmd/vultisigner/main.go
 RUN CGO_ENABLED=1 CC=clang go build -o /out/worker cmd/worker/main.go
 
-RUN ARCH=$(dpkg --print-architecture) && \
-    mkdir -p /out/libs && \
+RUN mkdir -p /out/libs && \
+    ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "arm64" ]; then LIBARCH="linux-arm64"; else LIBARCH="linux-amd64"; fi && \
     cp /build/frost-zm/go/frozt/includes/$LIBARCH/libfroztlib.so /out/libs/ 2>/dev/null || true && \
     cp /build/frost-zm/go/fromt/includes/$LIBARCH/libfromtlib.so /out/libs/ 2>/dev/null || true && \

@@ -59,6 +59,8 @@ services:
     depends_on:
       redis-relay:
         condition: service_healthy
+    ports:
+      - "9091:8080"
     volumes:
       - ./relay-config.json:/app/config.json:ro
     healthcheck:
@@ -79,6 +81,8 @@ services:
         condition: service_healthy
       minio-setup:
         condition: service_completed_successfully
+    ports:
+      - "8081:8080"
     environment:
       - VAULTS_PATH=/data/vaults
       - REDIS_HOST=redis-vs1

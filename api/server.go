@@ -88,6 +88,7 @@ func (s *Server) StartServer() error {
 	grp.POST("/batch/import", s.ImportVaultBatch)
 	grp.POST("/mldsa", s.CreateMldsaVault)
 	grp.POST("/sign", s.SignMessages)
+	grp.GET("/sign/response/:taskId", s.GetKeysignResult)
 	grp.POST("/resend", s.ResendVaultEmail)
 	grp.GET("/verify/:publicKeyECDSA/:code", s.VerifyCode)
 	return e.Start(fmt.Sprintf(":%d", s.port))
@@ -633,15 +634,14 @@ func (s *Server) GetKeysignResult(c echo.Context) error {
 		return fmt.Errorf("task not found")
 	}
 
-	if task.State == asynq.TaskStatePending {
-		return c.JSON(http.StatusOK, "Task is still in progress")
+	switch task.State {
+	case asynq.TaskStatePending, asynq.TaskStateActive:
+		return c.JSON(http.StatusAccepted, map[string]string{"status": "pending"})
+	case asynq.TaskStateCompleted:
+		return c.Blob(http.StatusOK, "application/json", task.Result)
+	default:
+		return c.JSON(http.StatusInternalServerError, map[string]string{"status": "failed"})
 	}
-
-	if task.State == asynq.TaskStateCompleted {
-		return c.JSON(http.StatusOK, task.Result)
-	}
-
-	return fmt.Errorf("task state is invalid")
 }
 func (s *Server) isValidHash(hash string) bool {
 	if len(hash) != 66 {
