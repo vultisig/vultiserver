@@ -1,9 +1,22 @@
 package keygen_batch_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
+)
+
+type ProtocolStatus struct {
+	Protocol string `json:"protocol"`
+	Status   string `json:"status"`
+	Error    string `json:"error,omitempty"`
+}
+
+const (
+	StatusDone    = "done"
+	StatusFailed  = "failed"
+	StatusTimeout = "timeout"
 )
 
 const (
@@ -96,9 +109,25 @@ func allFinished(protocols []*MockProtocol) bool {
 	return true
 }
 
-func runKeygen(protocols []*MockProtocol, parties []string, timeout time.Duration) map[string]error {
-	errors := make(map[string]error)
+type runKeygenResult struct {
+	errors        map[string]error
+	notifications []ProtocolStatus
+}
+
+func runKeygen(protocols []*MockProtocol, parties []string, timeout time.Duration) runKeygenResult {
+	result := runKeygenResult{
+		errors: make(map[string]error),
+	}
 	deadline := time.Now().Add(timeout)
+	failedNotified := make(map[string]bool)
+
+	notify := func(protocol, status, errMsg string) {
+		result.notifications = append(result.notifications, ProtocolStatus{
+			Protocol: protocol,
+			Status:   status,
+			Error:    errMsg,
+		})
+	}
 
 	for _, p := range protocols {
 		_, _ = p.DrainOutbound(parties)
@@ -106,7 +135,7 @@ func runKeygen(protocols []*MockProtocol, parties []string, timeout time.Duratio
 
 	for time.Now().Before(deadline) {
 		if allFinished(protocols) {
-			return errors
+			return result
 		}
 
 		progress := false
@@ -116,11 +145,16 @@ func runKeygen(protocols []*MockProtocol, parties []string, timeout time.Duratio
 			}
 			finished, err := p.ProcessInbound("peer", []byte("msg"))
 			if err != nil {
-				errors[p.Name()] = err
+				result.errors[p.Name()] = err
+				if !failedNotified[p.Name()] {
+					notify(p.Name(), StatusFailed, err.Error())
+					failedNotified[p.Name()] = true
+				}
 				continue
 			}
 			progress = true
 			if finished {
+				notify(p.Name(), StatusDone, "")
 				break
 			}
 			_, _ = p.DrainOutbound(parties)
@@ -130,7 +164,14 @@ func runKeygen(protocols []*MockProtocol, parties []string, timeout time.Duratio
 			time.Sleep(PollInterval)
 		}
 	}
-	return errors
+
+	for _, p := range protocols {
+		if !p.IsFinished() && !failedNotified[p.Name()] {
+			notify(p.Name(), StatusTimeout, "")
+		}
+	}
+
+	return result
 }
 
 func TestAllProtocolsFinish(t *testing.T) {
@@ -141,10 +182,10 @@ func TestAllProtocolsFinish(t *testing.T) {
 	}
 	parties := []string{"server", "client"}
 
-	errors := runKeygen(protocols, parties, KeygenTimeout)
+	result := runKeygen(protocols, parties, KeygenTimeout)
 
-	if len(errors) > 0 {
-		t.Fatalf("unexpected errors: %v", errors)
+	if len(result.errors) > 0 {
+		t.Fatalf("unexpected errors: %v", result.errors)
 	}
 	for _, p := range protocols {
 		if !p.IsFinished() {
@@ -161,10 +202,10 @@ func TestMultiRoundProtocolFinishes(t *testing.T) {
 	}
 	parties := []string{"server", "client"}
 
-	errors := runKeygen(protocols, parties, KeygenTimeout)
+	result := runKeygen(protocols, parties, KeygenTimeout)
 
-	if len(errors) > 0 {
-		t.Fatalf("unexpected errors: %v", errors)
+	if len(result.errors) > 0 {
+		t.Fatalf("unexpected errors: %v", result.errors)
 	}
 	for _, p := range protocols {
 		if !p.IsFinished() {
@@ -181,7 +222,7 @@ func TestFailingOptionalProtocolDoesNotBlock(t *testing.T) {
 	}
 	parties := []string{"server", "client"}
 
-	errors := runKeygen(protocols, parties, KeygenTimeout)
+	result := runKeygen(protocols, parties, KeygenTimeout)
 
 	if !protocols[0].IsFinished() {
 		t.Fatal("ecdsa should have finished")
@@ -192,7 +233,7 @@ func TestFailingOptionalProtocolDoesNotBlock(t *testing.T) {
 	if protocols[2].IsFinished() {
 		t.Fatal("mldsa should NOT have finished (it always fails)")
 	}
-	if errors["mldsa"] == nil {
+	if result.errors["mldsa"] == nil {
 		t.Fatal("mldsa error should have been captured")
 	}
 }
@@ -204,12 +245,12 @@ func TestFailingProtocolDetected(t *testing.T) {
 	}
 	parties := []string{"server", "client"}
 
-	errors := runKeygen(protocols, parties, KeygenTimeout)
+	result := runKeygen(protocols, parties, KeygenTimeout)
 
 	if protocols[0].IsFinished() {
 		t.Fatal("ecdsa should NOT have finished (it always fails)")
 	}
-	if errors["ecdsa"] == nil {
+	if result.errors["ecdsa"] == nil {
 		t.Fatal("ecdsa failure should have been detected")
 	}
 }
@@ -241,11 +282,11 @@ func TestEarlyExitWhenAllDone(t *testing.T) {
 	parties := []string{"server", "client"}
 
 	start := time.Now()
-	errors := runKeygen(protocols, parties, KeygenTimeout)
+	result := runKeygen(protocols, parties, KeygenTimeout)
 	elapsed := time.Since(start)
 
-	if len(errors) > 0 {
-		t.Fatalf("unexpected errors: %v", errors)
+	if len(result.errors) > 0 {
+		t.Fatalf("unexpected errors: %v", result.errors)
 	}
 	for _, p := range protocols {
 		if !p.IsFinished() {
@@ -265,7 +306,7 @@ func TestResultsMatchAfterKeygen(t *testing.T) {
 	}
 	parties := []string{"server", "client"}
 
-	errs := runKeygen(protocols, parties, KeygenTimeout)
+	result := runKeygen(protocols, parties, KeygenTimeout)
 
 	results := make(map[string]*PhaseResult)
 	for _, p := range protocols {
@@ -282,7 +323,7 @@ func TestResultsMatchAfterKeygen(t *testing.T) {
 		results[p.Name()] = res
 	}
 
-	if errs["mldsa"] == nil {
+	if result.errors["mldsa"] == nil {
 		t.Fatal("mldsa error should have been captured")
 	}
 	if _, ok := results["mldsa"]; ok {
@@ -308,6 +349,148 @@ func TestResultsMatchAfterKeygen(t *testing.T) {
 
 	if results["ecdsa"].PublicKey == results["eddsa"].PublicKey {
 		t.Fatal("ecdsa and eddsa should have distinct public keys")
+	}
+}
+
+func TestNotifyDoneOnSuccess(t *testing.T) {
+	protocols := []*MockProtocol{
+		NewMockProtocol("ecdsa", "p-ecdsa", 1, false),
+		NewMockProtocol("eddsa", "p-eddsa", 1, false),
+	}
+	parties := []string{"server", "client"}
+
+	result := runKeygen(protocols, parties, KeygenTimeout)
+
+	if len(result.errors) > 0 {
+		t.Fatalf("unexpected errors: %v", result.errors)
+	}
+
+	doneCount := 0
+	for _, n := range result.notifications {
+		if n.Status != StatusDone {
+			t.Fatalf("expected only done notifications, got %s for %s", n.Status, n.Protocol)
+		}
+		doneCount++
+	}
+	if doneCount != 2 {
+		t.Fatalf("expected 2 done notifications, got %d", doneCount)
+	}
+}
+
+func TestNotifyFailedOnError(t *testing.T) {
+	protocols := []*MockProtocol{
+		NewMockProtocol("ecdsa", "p-ecdsa", 2, false),
+		NewMockProtocol("eddsa", "p-eddsa", 2, false),
+		NewMockProtocol("mldsa", "p-mldsa", 1, true),
+	}
+	parties := []string{"server", "client"}
+
+	result := runKeygen(protocols, parties, KeygenTimeout)
+
+	failedNotifications := 0
+	for _, n := range result.notifications {
+		if n.Protocol == "mldsa" && n.Status == StatusFailed {
+			failedNotifications++
+			if n.Error == "" {
+				t.Fatal("failed notification should include error message")
+			}
+		}
+	}
+	if failedNotifications != 1 {
+		t.Fatalf("expected exactly 1 failed notification for mldsa, got %d", failedNotifications)
+	}
+}
+
+func TestNotifyFailedOnlyOnce(t *testing.T) {
+	protocols := []*MockProtocol{
+		NewMockProtocol("ecdsa", "p-ecdsa", 1, true),
+		NewMockProtocol("eddsa", "p-eddsa", 1, false),
+	}
+	parties := []string{"server", "client"}
+
+	result := runKeygen(protocols, parties, KeygenTimeout)
+
+	failedCount := 0
+	for _, n := range result.notifications {
+		if n.Protocol == "ecdsa" && n.Status == StatusFailed {
+			failedCount++
+		}
+	}
+	if failedCount != 1 {
+		t.Fatalf("expected exactly 1 failed notification for ecdsa (not repeated), got %d", failedCount)
+	}
+}
+
+func TestNotifyTimeoutOnStall(t *testing.T) {
+	p := NewMockProtocol("ecdsa", "p-ecdsa", 10000, false)
+	p.stalled = true
+	protocols := []*MockProtocol{p}
+	parties := []string{"server", "client"}
+
+	result := runKeygen(protocols, parties, 100*time.Millisecond)
+
+	timeoutCount := 0
+	for _, n := range result.notifications {
+		if n.Protocol == "ecdsa" && n.Status == StatusTimeout {
+			timeoutCount++
+		}
+	}
+	if timeoutCount != 1 {
+		t.Fatalf("expected 1 timeout notification for stalled protocol, got %d", timeoutCount)
+	}
+}
+
+func TestNotifyMixedStatuses(t *testing.T) {
+	stalled := NewMockProtocol("eddsa", "p-eddsa", 10000, false)
+	stalled.stalled = true
+	protocols := []*MockProtocol{
+		NewMockProtocol("ecdsa", "p-ecdsa", 1, false),
+		stalled,
+		NewMockProtocol("mldsa", "p-mldsa", 1, true),
+	}
+	parties := []string{"server", "client"}
+
+	result := runKeygen(protocols, parties, KeygenTimeout)
+
+	statusMap := make(map[string]string)
+	for _, n := range result.notifications {
+		statusMap[n.Protocol] = n.Status
+	}
+	if statusMap["ecdsa"] != StatusDone {
+		t.Fatalf("ecdsa should be done, got %q", statusMap["ecdsa"])
+	}
+	if statusMap["mldsa"] != StatusFailed {
+		t.Fatalf("mldsa should be failed, got %q", statusMap["mldsa"])
+	}
+	if statusMap["eddsa"] != StatusTimeout {
+		t.Fatalf("eddsa should be timeout, got %q", statusMap["eddsa"])
+	}
+}
+
+func TestNotificationSerializesToJSON(t *testing.T) {
+	status := ProtocolStatus{Protocol: "ecdsa", Status: StatusDone}
+	data, err := json.Marshal(status)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	var decoded ProtocolStatus
+	err = json.Unmarshal(data, &decoded)
+	if err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if decoded.Protocol != "ecdsa" || decoded.Status != StatusDone {
+		t.Fatalf("round-trip mismatch: %+v", decoded)
+	}
+
+	statusWithErr := ProtocolStatus{Protocol: "mldsa", Status: StatusFailed, Error: "some error"}
+	data, _ = json.Marshal(statusWithErr)
+	err = json.Unmarshal(data, &decoded)
+	if err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if decoded.Error != "some error" {
+		t.Fatalf("error field mismatch: %q", decoded.Error)
 	}
 }
 
