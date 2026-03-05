@@ -18,24 +18,7 @@ import (
 	"github.com/vultisig/vultiserver/relay"
 )
 
-var knownProtocols = map[string]bool{
-	"ecdsa": true,
-	"eddsa": true,
-	"mldsa": true,
-}
-
 func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*KeygenResult, error) {
-	seen := make(map[string]bool, len(req.Protocols))
-	for _, name := range req.Protocols {
-		if !knownProtocols[name] {
-			return nil, fmt.Errorf("unknown protocol: %s", name)
-		}
-		if seen[name] {
-			return nil, fmt.Errorf("duplicate protocol: %s", name)
-		}
-		seen[name] = true
-	}
-
 	var existingVault *vaultType.Vault
 	protocolsToRun := req.Protocols
 	isAppend := req.PublicKey != ""
@@ -60,6 +43,9 @@ func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*Keyge
 	} else {
 		if !containsProtocol(req.Protocols, "ecdsa") {
 			return nil, fmt.Errorf("ecdsa is required for new vault")
+		}
+		if req.LocalPartyId == "" {
+			return nil, fmt.Errorf("local_party_id is required for new vault")
 		}
 	}
 
@@ -107,7 +93,7 @@ func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*Keyge
 		return nil, fmt.Errorf("failed to decode setup message: %w", err)
 	}
 
-	protocols, err := t.initProtocols(protocolsToRun, setupMsg, req.LocalPartyId, partiesJoined, relayClient, req.SessionID, req.HexEncryptionKey)
+	protocols, err := t.initProtocols(protocolsToRun, setupMsg, req.LocalPartyId, relayClient, req.SessionID, req.HexEncryptionKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init protocols: %w", err)
 	}
@@ -165,15 +151,19 @@ func filterNewProtocols(requested []string, vault *vaultType.Vault) []string {
 }
 
 func vaultHasProtocol(vault *vaultType.Vault, name string) bool {
-	switch name {
+	return protocolPublicKey(vault, name) != ""
+}
+
+func protocolPublicKey(vault *vaultType.Vault, protocol string) string {
+	switch protocol {
 	case "ecdsa":
-		return vault.PublicKeyEcdsa != ""
+		return vault.PublicKeyEcdsa
 	case "eddsa":
-		return vault.PublicKeyEddsa != ""
+		return vault.PublicKeyEddsa
 	case "mldsa":
-		return vault.PublicKeyMldsa44 != ""
+		return vault.PublicKeyMldsa44
 	default:
-		return false
+		return ""
 	}
 }
 
@@ -204,7 +194,7 @@ func hasAnySuccess(result *KeygenResult) bool {
 }
 
 func (t *DKLSTssService) initProtocols(
-	names []string, setupMsg []byte, localPartyID string, parties []string,
+	names []string, setupMsg []byte, localPartyID string,
 	relayClient *relay.Client, sessionID, hexEncryptionKey string,
 ) ([]KeygenProtocol, error) {
 	var protocols []KeygenProtocol
@@ -218,7 +208,7 @@ func (t *DKLSTssService) initProtocols(
 			}
 			protocolSetupMsg = mldsaSetup
 		}
-		p, err := t.initProtocol(name, protocolSetupMsg, localPartyID, parties)
+		p, err := t.initProtocol(name, protocolSetupMsg, localPartyID)
 		if err != nil {
 			freeProtocols(protocols)
 			return nil, fmt.Errorf("init %s: %w", name, err)
@@ -240,7 +230,7 @@ func (t *DKLSTssService) fetchProtocolSetupMessage(
 	return t.decodeDecryptMessage(encryptedMsg, hexEncryptionKey)
 }
 
-func (t *DKLSTssService) initProtocol(name string, setupMsg []byte, localPartyID string, parties []string) (KeygenProtocol, error) {
+func (t *DKLSTssService) initProtocol(name string, setupMsg []byte, localPartyID string) (KeygenProtocol, error) {
 	switch name {
 	case "ecdsa":
 		return NewMPCKeygenProtocol("ecdsa", "p-ecdsa", setupMsg, localPartyID, false, false)
@@ -319,17 +309,23 @@ func (t *DKLSTssService) runKeygen(
 						"error":    procErr,
 					}).Warn("process inbound failed")
 					if !failedNotified[p.Name()] {
-						t.notifyStatus(sessionID, hexEncryptionKey, localPartyID, parties, p.Name(), StatusFailed, procErr.Error())
+						t.notifyStatus(sessionID, hexEncryptionKey, localPartyID, parties, p.Name(), StatusFailed, procErr.Error(), "")
 						failedNotified[p.Name()] = true
 					}
 				}
 				_ = relayClient.DeleteMessageFromServer(sessionID, localPartyID, msg.Hash, p.MessageID())
 				progress = true
 				if finished {
+					publicKey := ""
+					pr, resultErr := p.Result()
+					if resultErr == nil {
+						publicKey = pr.PublicKey
+					}
 					t.logger.WithFields(logrus.Fields{
-						"protocol": p.Name(),
+						"protocol":  p.Name(),
+						"publicKey": publicKey,
 					}).Info("protocol finished")
-					t.notifyStatus(sessionID, hexEncryptionKey, localPartyID, parties, p.Name(), StatusDone, "")
+					t.notifyStatus(sessionID, hexEncryptionKey, localPartyID, parties, p.Name(), StatusDone, "", publicKey)
 					break
 				}
 			}
@@ -354,7 +350,7 @@ func (t *DKLSTssService) runKeygen(
 
 	for _, p := range protocols {
 		if !p.IsFinished() && !failedNotified[p.Name()] {
-			t.notifyStatus(sessionID, hexEncryptionKey, localPartyID, parties, p.Name(), StatusTimeout, "")
+			t.notifyStatus(sessionID, hexEncryptionKey, localPartyID, parties, p.Name(), StatusTimeout, "", "")
 		}
 	}
 }
@@ -390,12 +386,13 @@ func (t *DKLSTssService) sendMessages(
 
 func (t *DKLSTssService) notifyStatus(
 	sessionID, hexEncryptionKey, localPartyID string,
-	parties []string, protocol, status, errMsg string,
+	parties []string, protocol, status, errMsg, publicKey string,
 ) {
 	msg := ProtocolStatus{
-		Protocol: protocol,
-		Status:   status,
-		Error:    errMsg,
+		Protocol:  protocol,
+		Status:    status,
+		Error:     errMsg,
+		PublicKey: publicKey,
 	}
 	body, err := json.Marshal(msg)
 	if err != nil {

@@ -29,6 +29,53 @@ type ReshareRequest struct {
 	ReshareType        ReshareType `json:"reshare_type"`
 }
 
+type BatchReshareRequest struct {
+	PublicKey          string   `json:"public_key"`
+	SessionID          string   `json:"session_id"`
+	HexEncryptionKey   string   `json:"hex_encryption_key"`
+	LocalPartyId       string   `json:"local_party_id"`
+	EncryptionPassword string   `json:"encryption_password"`
+	Email              string   `json:"email"`
+	OldParties         []string `json:"old_parties"`
+	Protocols          []string `json:"protocols"`
+}
+
+func (req *BatchReshareRequest) IsValid() error {
+	if req.PublicKey == "" {
+		return fmt.Errorf("public_key is required")
+	}
+	if req.SessionID == "" {
+		return fmt.Errorf("session_id is required")
+	}
+	if _, err := uuid.Parse(req.SessionID); err != nil {
+		return fmt.Errorf("session_id is not valid")
+	}
+	if req.HexEncryptionKey == "" {
+		return fmt.Errorf("hex_encryption_key is required")
+	}
+	if !isValidHexString(req.HexEncryptionKey) {
+		return fmt.Errorf("hex_encryption_key is not valid")
+	}
+	if req.EncryptionPassword == "" {
+		return fmt.Errorf("encryption_password is required")
+	}
+	if len(req.Protocols) == 0 {
+		return fmt.Errorf("protocols list is required")
+	}
+	known := map[string]bool{"ecdsa": true, "eddsa": true}
+	seen := map[string]bool{}
+	for _, p := range req.Protocols {
+		if !known[p] {
+			return fmt.Errorf("unsupported reshare protocol: %s", p)
+		}
+		if seen[p] {
+			return fmt.Errorf("duplicate protocol: %s", p)
+		}
+		seen[p] = true
+	}
+	return nil
+}
+
 func (req *ReshareRequest) IsValid() error {
 	if req.Name == "" {
 		return fmt.Errorf("name is required")

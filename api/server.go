@@ -85,8 +85,10 @@ func (s *Server) StartServer() error {
 	grp.GET("/exist/:publicKeyECDSA", s.ExistVault) // Check if Vault exists
 	//	grp.DELETE("/delete/:publicKeyECDSA", s.DeleteVault) // Delete Vault Data
 	grp.POST("/batch", s.CreateVaultBatch)
+	grp.POST("/reshare/batch", s.ReshareVaultBatch)
 	grp.POST("/mldsa", s.CreateMldsaVault)  // Add MLDSA key to existing vault
 	grp.POST("/sign", s.SignMessages)       // Sign messages
+	grp.GET("/task/:taskID", s.GetTaskResult)
 	grp.POST("/resend", s.ResendVaultEmail) // request server to send vault share , code through email again
 	grp.GET("/verify/:publicKeyECDSA/:code", s.VerifyCode)
 	// grp.GET("/sign/response/:taskId", s.GetKeysignResult) // Get keysign result
@@ -208,14 +210,73 @@ func (s *Server) CreateVaultBatch(c echo.Context) error {
 	if setErr != nil {
 		s.logger.Errorf("fail to set session, err: %v", setErr)
 	}
-	_, err = s.client.Enqueue(asynq.NewTask(tasks.TypeKeygenBatch, buf),
+	ti, err := s.client.Enqueue(asynq.NewTask(tasks.TypeKeygenBatch, buf),
 		asynq.MaxRetry(-1),
 		asynq.Timeout(7*time.Minute),
+		asynq.Retention(10*time.Minute),
+		asynq.Queue(tasks.QUEUE_NAME))
+	if err != nil {
+		return fmt.Errorf("fail to enqueue task, err: %w", err)
+	}
+	return c.JSON(http.StatusOK, map[string]string{"task_id": ti.ID})
+}
+
+func (s *Server) ReshareVaultBatch(c echo.Context) error {
+	var req types.BatchReshareRequest
+	bindErr := c.Bind(&req)
+	if bindErr != nil {
+		return fmt.Errorf("fail to parse request, err: %w", bindErr)
+	}
+	validErr := req.IsValid()
+	if validErr != nil {
+		return fmt.Errorf("invalid request, err: %w", validErr)
+	}
+	buf, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("fail to marshal to json, err: %w", err)
+	}
+
+	result, err := s.redis.Get(c.Request().Context(), req.SessionID)
+	if err == nil && result != "" {
+		return c.NoContent(http.StatusOK)
+	}
+
+	setErr := s.redis.Set(c.Request().Context(), req.SessionID, req.SessionID, 8*time.Minute)
+	if setErr != nil {
+		s.logger.Errorf("fail to set session, err: %v", setErr)
+	}
+	_, err = s.client.Enqueue(asynq.NewTask(tasks.TypeReshareBatch, buf),
+		asynq.MaxRetry(-1),
+		asynq.Timeout(7*time.Minute),
+		asynq.Retention(10*time.Minute),
 		asynq.Queue(tasks.QUEUE_NAME))
 	if err != nil {
 		return fmt.Errorf("fail to enqueue task, err: %w", err)
 	}
 	return c.NoContent(http.StatusOK)
+}
+
+func (s *Server) GetTaskResult(c echo.Context) error {
+	taskID := c.Param("taskID")
+	if taskID == "" {
+		return fmt.Errorf("task_id is required")
+	}
+	task, err := s.inspector.GetTaskInfo(tasks.QUEUE_NAME, taskID)
+	if err != nil {
+		return fmt.Errorf("fail to find task, err: %w", err)
+	}
+	if task == nil {
+		return fmt.Errorf("task not found")
+	}
+
+	switch task.State {
+	case asynq.TaskStatePending, asynq.TaskStateActive:
+		return c.JSON(http.StatusAccepted, map[string]string{"status": "pending"})
+	case asynq.TaskStateCompleted:
+		return c.JSONBlob(http.StatusOK, task.Result)
+	default:
+		return c.JSON(http.StatusInternalServerError, map[string]string{"status": "failed"})
+	}
 }
 
 // ReshareVault is a handler to reshare a vault

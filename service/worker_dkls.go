@@ -203,6 +203,64 @@ func (s *WorkerService) HandleKeygenBatch(ctx context.Context, t *asynq.Task) er
 		"keyEDDSA": result.EDDSAPublicKey,
 		"phases":   result.Phases,
 	}).Info("batch keygen completed")
+
+	taskResult := KeyGenerationTaskResult{
+		ECDSAPublicKey: result.ECDSAPublicKey,
+		EDDSAPublicKey: result.EDDSAPublicKey,
+	}
+	resultBytes, marshalErr := json.Marshal(taskResult)
+	if marshalErr != nil {
+		s.logger.Errorf("json.Marshal failed: %v", marshalErr)
+		return fmt.Errorf("json.Marshal failed: %v: %w", marshalErr, asynq.SkipRetry)
+	}
+	_, writeErr := t.ResultWriter().Write(resultBytes)
+	if writeErr != nil {
+		s.logger.Errorf("t.ResultWriter.Write failed: %v", writeErr)
+		return fmt.Errorf("t.ResultWriter.Write failed: %v: %w", writeErr, asynq.SkipRetry)
+	}
+
+	return nil
+}
+
+func (s *WorkerService) HandleReshareBatch(ctx context.Context, t *asynq.Task) error {
+	cancelErr := contexthelper.CheckCancellation(ctx)
+	if cancelErr != nil {
+		return cancelErr
+	}
+	defer s.measureTime("worker.vault.reshare.batch.latency", time.Now(), []string{})
+	var req types.BatchReshareRequest
+	unmarshalErr := json.Unmarshal(t.Payload(), &req)
+	if unmarshalErr != nil {
+		return fmt.Errorf("json.Unmarshal failed: %v: %w", unmarshalErr, asynq.SkipRetry)
+	}
+	s.logger.WithFields(logrus.Fields{
+		"public_key": req.PublicKey,
+		"session":    req.SessionID,
+		"protocols":  req.Protocols,
+	}).Info("Joining batch reshare")
+	s.incCounter("worker.vault.reshare.batch", []string{})
+	validErr := req.IsValid()
+	if validErr != nil {
+		return fmt.Errorf("invalid request: %s: %w", validErr, asynq.SkipRetry)
+	}
+	localStateAccessor, err := relay.NewLocalStateAccessorImp(s.cfg.Server.VaultsFilePath, "", "", s.blockStorage)
+	if err != nil {
+		return fmt.Errorf("relay.NewLocalStateAccessorImp failed: %s: %w", err, asynq.SkipRetry)
+	}
+	dklsService, err := NewDKLSTssService(s.cfg, s.blockStorage, localStateAccessor, s)
+	if err != nil {
+		return fmt.Errorf("NewDKLSTssService failed: %s: %w", err, asynq.SkipRetry)
+	}
+	result, reshareErr := dklsService.ProcessBatchReshare(req)
+	if reshareErr != nil {
+		s.incCounter("worker.vault.reshare.batch.error", []string{})
+		s.logger.Errorf("batch reshare failed: %v", reshareErr)
+		return fmt.Errorf("batch reshare failed: %v: %w", reshareErr, asynq.SkipRetry)
+	}
+
+	s.logger.WithFields(logrus.Fields{
+		"phases": result.Phases,
+	}).Info("batch reshare completed")
 	return nil
 }
 

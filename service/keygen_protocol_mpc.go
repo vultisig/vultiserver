@@ -10,16 +10,18 @@ import (
 )
 
 type MPCKeygenProtocol struct {
-	name      string
-	msgID     string
-	isEdDSA   bool
-	isMldsa   bool
-	handle    Handle
-	wrapper   *MPCWrapperImp
-	finished  bool
-	failed    bool
-	lastErr   error
-	outBuffer []OutboundMsg
+	name         string
+	msgID        string
+	isEdDSA      bool
+	isMldsa      bool
+	handle       Handle
+	wrapper      *MPCWrapperImp
+	finished     bool
+	failed       bool
+	lastErr      error
+	outBuffer    []OutboundMsg
+	cachedResult *PhaseResult
+	cachedErr    error
 }
 
 func NewMPCKeygenProtocol(
@@ -101,6 +103,14 @@ func (p *MPCKeygenProtocol) ProcessInbound(from string, body []byte) (bool, erro
 }
 
 func (p *MPCKeygenProtocol) Result() (*PhaseResult, error) {
+	if p.cachedResult != nil || p.cachedErr != nil {
+		return p.cachedResult, p.cachedErr
+	}
+	p.cachedResult, p.cachedErr = p.computeResult()
+	return p.cachedResult, p.cachedErr
+}
+
+func (p *MPCKeygenProtocol) computeResult() (*PhaseResult, error) {
 	if !p.finished {
 		return nil, fmt.Errorf("%s not finished", p.name)
 	}
@@ -130,9 +140,9 @@ func (p *MPCKeygenProtocol) Result() (*PhaseResult, error) {
 
 	chainCode := ""
 	if !p.isEdDSA {
-		chainCodeBytes, err := p.wrapper.KeyshareChainCode(keyshareHandle)
-		if err != nil {
-			return nil, fmt.Errorf("%s chain code: %w", p.name, err)
+		chainCodeBytes, ccErr := p.wrapper.KeyshareChainCode(keyshareHandle)
+		if ccErr != nil {
+			return nil, fmt.Errorf("%s chain code: %w", p.name, ccErr)
 		}
 		if chainCodeBytes != nil {
 			chainCode = hex.EncodeToString(chainCodeBytes)

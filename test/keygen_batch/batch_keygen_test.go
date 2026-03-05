@@ -8,9 +8,10 @@ import (
 )
 
 type ProtocolStatus struct {
-	Protocol string `json:"protocol"`
-	Status   string `json:"status"`
-	Error    string `json:"error,omitempty"`
+	Protocol  string `json:"protocol"`
+	Status    string `json:"status"`
+	Error     string `json:"error,omitempty"`
+	PublicKey string `json:"public_key,omitempty"`
 }
 
 const (
@@ -121,11 +122,12 @@ func runKeygen(protocols []*MockProtocol, parties []string, timeout time.Duratio
 	deadline := time.Now().Add(timeout)
 	failedNotified := make(map[string]bool)
 
-	notify := func(protocol, status, errMsg string) {
+	notify := func(protocol, status, errMsg, publicKey string) {
 		result.notifications = append(result.notifications, ProtocolStatus{
-			Protocol: protocol,
-			Status:   status,
-			Error:    errMsg,
+			Protocol:  protocol,
+			Status:    status,
+			Error:     errMsg,
+			PublicKey: publicKey,
 		})
 	}
 
@@ -147,14 +149,19 @@ func runKeygen(protocols []*MockProtocol, parties []string, timeout time.Duratio
 			if err != nil {
 				result.errors[p.Name()] = err
 				if !failedNotified[p.Name()] {
-					notify(p.Name(), StatusFailed, err.Error())
+					notify(p.Name(), StatusFailed, err.Error(), "")
 					failedNotified[p.Name()] = true
 				}
 				continue
 			}
 			progress = true
 			if finished {
-				notify(p.Name(), StatusDone, "")
+				publicKey := ""
+				pr, resultErr := p.Result()
+				if resultErr == nil {
+					publicKey = pr.PublicKey
+				}
+				notify(p.Name(), StatusDone, "", publicKey)
 				break
 			}
 			_, _ = p.DrainOutbound(parties)
@@ -167,7 +174,7 @@ func runKeygen(protocols []*MockProtocol, parties []string, timeout time.Duratio
 
 	for _, p := range protocols {
 		if !p.IsFinished() && !failedNotified[p.Name()] {
-			notify(p.Name(), StatusTimeout, "")
+			notify(p.Name(), StatusTimeout, "", "")
 		}
 	}
 
@@ -178,7 +185,7 @@ func TestAllProtocolsFinish(t *testing.T) {
 	protocols := []*MockProtocol{
 		NewMockProtocol("ecdsa", "p-ecdsa", 1, false),
 		NewMockProtocol("eddsa", "p-eddsa", 1, false),
-		NewMockProtocol("mldsa", "p-mldsa", 1, false),
+		NewMockProtocol("frozt", "p-frozt", 1, false),
 	}
 	parties := []string{"server", "client"}
 
@@ -198,7 +205,7 @@ func TestMultiRoundProtocolFinishes(t *testing.T) {
 	protocols := []*MockProtocol{
 		NewMockProtocol("ecdsa", "p-ecdsa", 1, false),
 		NewMockProtocol("eddsa", "p-eddsa", 3, false),
-		NewMockProtocol("mldsa", "p-mldsa", 2, false),
+		NewMockProtocol("frozt", "p-frozt", 1, false),
 	}
 	parties := []string{"server", "client"}
 
@@ -218,7 +225,7 @@ func TestFailingOptionalProtocolDoesNotBlock(t *testing.T) {
 	protocols := []*MockProtocol{
 		NewMockProtocol("ecdsa", "p-ecdsa", 2, false),
 		NewMockProtocol("eddsa", "p-eddsa", 2, false),
-		NewMockProtocol("mldsa", "p-mldsa", 1, true),
+		NewMockProtocol("frozt", "p-frozt", 1, true),
 	}
 	parties := []string{"server", "client"}
 
@@ -231,10 +238,10 @@ func TestFailingOptionalProtocolDoesNotBlock(t *testing.T) {
 		t.Fatal("eddsa should have finished")
 	}
 	if protocols[2].IsFinished() {
-		t.Fatal("mldsa should NOT have finished (it always fails)")
+		t.Fatal("frozt should NOT have finished (it always fails)")
 	}
-	if result.errors["mldsa"] == nil {
-		t.Fatal("mldsa error should have been captured")
+	if result.errors["frozt"] == nil {
+		t.Fatal("frozt error should have been captured")
 	}
 }
 
@@ -302,7 +309,7 @@ func TestResultsMatchAfterKeygen(t *testing.T) {
 	protocols := []*MockProtocol{
 		NewMockProtocol("ecdsa", "p-ecdsa", 1, false),
 		NewMockProtocol("eddsa", "p-eddsa", 2, false),
-		NewMockProtocol("mldsa", "p-mldsa", 1, true),
+		NewMockProtocol("frozt", "p-frozt", 1, true),
 	}
 	parties := []string{"server", "client"}
 
@@ -323,11 +330,11 @@ func TestResultsMatchAfterKeygen(t *testing.T) {
 		results[p.Name()] = res
 	}
 
-	if result.errors["mldsa"] == nil {
-		t.Fatal("mldsa error should have been captured")
+	if result.errors["frozt"] == nil {
+		t.Fatal("frozt error should have been captured")
 	}
-	if _, ok := results["mldsa"]; ok {
-		t.Fatal("mldsa should not have a result")
+	if _, ok := results["frozt"]; ok {
+		t.Fatal("frozt should not have a result")
 	}
 
 	for _, name := range []string{"ecdsa", "eddsa"} {
@@ -369,6 +376,9 @@ func TestNotifyDoneOnSuccess(t *testing.T) {
 	for _, n := range result.notifications {
 		if n.Status != StatusDone {
 			t.Fatalf("expected only done notifications, got %s for %s", n.Status, n.Protocol)
+		}
+		if n.PublicKey == "" {
+			t.Fatalf("done notification for %s should include public key", n.Protocol)
 		}
 		doneCount++
 	}
@@ -500,7 +510,9 @@ func TestProtocolListValidation(t *testing.T) {
 		wantErr   bool
 	}{
 		{[]string{"ecdsa", "eddsa"}, false},
-		{[]string{"ecdsa", "eddsa", "mldsa"}, false},
+		{[]string{"ecdsa", "eddsa", "frozt"}, false},
+		{[]string{"ecdsa", "eddsa", "fromt"}, false},
+		{[]string{"ecdsa", "eddsa", "frozt", "fromt"}, false},
 		{[]string{"ecdsa"}, true},
 		{[]string{"eddsa"}, true},
 		{[]string{}, true},
@@ -517,7 +529,7 @@ func TestProtocolListValidation(t *testing.T) {
 }
 
 func validateProtocolList(names []string) error {
-	known := map[string]bool{"ecdsa": true, "eddsa": true, "mldsa": true}
+	known := map[string]bool{"ecdsa": true, "eddsa": true, "frozt": true, "fromt": true}
 	hasECDSA := false
 	hasEdDSA := false
 	seen := map[string]bool{}

@@ -1,11 +1,23 @@
 package service
 
 import (
+	"os"
+	"strconv"
 	"time"
 )
 
+var KeygenTimeout = getKeygenTimeout()
+
+func getKeygenTimeout() time.Duration {
+	if v := os.Getenv("KEYGEN_TIMEOUT_MINUTES"); v != "" {
+		if m, err := strconv.Atoi(v); err == nil && m > 0 {
+			return time.Duration(m) * time.Minute
+		}
+	}
+	return 3 * time.Minute
+}
+
 const (
-	KeygenTimeout   = 3 * time.Minute
 	PollInterval    = 100 * time.Millisecond
 	StatusDone      = "done"
 	StatusFailed    = "failed"
@@ -14,9 +26,10 @@ const (
 )
 
 type ProtocolStatus struct {
-	Protocol string `json:"protocol"`
-	Status   string `json:"status"`
-	Error    string `json:"error,omitempty"`
+	Protocol  string `json:"protocol"`
+	Status    string `json:"status"`
+	Error     string `json:"error,omitempty"`
+	PublicKey string `json:"public_key,omitempty"`
 }
 
 type OutboundMsg struct {
