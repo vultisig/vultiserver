@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -265,6 +266,7 @@ func (t *DKLSTssService) runKeygen(
 ) {
 	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
 	deadline := time.Now().Add(KeygenTimeout)
+	failedNotified := make(map[string]bool)
 
 	for _, p := range protocols {
 		outbound, err := p.DrainOutbound(parties)
@@ -316,6 +318,10 @@ func (t *DKLSTssService) runKeygen(
 						"from":     msg.From,
 						"error":    procErr,
 					}).Warn("process inbound failed")
+					if !failedNotified[p.Name()] {
+						t.notifyStatus(sessionID, hexEncryptionKey, localPartyID, parties, p.Name(), StatusFailed, procErr.Error())
+						failedNotified[p.Name()] = true
+					}
 				}
 				_ = relayClient.DeleteMessageFromServer(sessionID, localPartyID, msg.Hash, p.MessageID())
 				progress = true
@@ -323,6 +329,7 @@ func (t *DKLSTssService) runKeygen(
 					t.logger.WithFields(logrus.Fields{
 						"protocol": p.Name(),
 					}).Info("protocol finished")
+					t.notifyStatus(sessionID, hexEncryptionKey, localPartyID, parties, p.Name(), StatusDone, "")
 					break
 				}
 			}
@@ -342,6 +349,12 @@ func (t *DKLSTssService) runKeygen(
 
 		if !progress {
 			time.Sleep(PollInterval)
+		}
+	}
+
+	for _, p := range protocols {
+		if !p.IsFinished() && !failedNotified[p.Name()] {
+			t.notifyStatus(sessionID, hexEncryptionKey, localPartyID, parties, p.Name(), StatusTimeout, "")
 		}
 	}
 }
@@ -373,6 +386,26 @@ func (t *DKLSTssService) sendMessages(
 		}
 	}
 	return nil
+}
+
+func (t *DKLSTssService) notifyStatus(
+	sessionID, hexEncryptionKey, localPartyID string,
+	parties []string, protocol, status, errMsg string,
+) {
+	msg := ProtocolStatus{
+		Protocol: protocol,
+		Status:   status,
+		Error:    errMsg,
+	}
+	body, err := json.Marshal(msg)
+	if err != nil {
+		t.logger.WithFields(logrus.Fields{"protocol": protocol, "error": err}).Warn("failed to marshal status")
+		return
+	}
+	sendErr := t.sendMessages(StatusMessageID, []OutboundMsg{{Body: body}}, sessionID, hexEncryptionKey, localPartyID, parties)
+	if sendErr != nil {
+		t.logger.WithFields(logrus.Fields{"protocol": protocol, "status": status, "error": sendErr}).Warn("failed to send status notification")
+	}
 }
 
 func allFinished(protocols []KeygenProtocol) bool {

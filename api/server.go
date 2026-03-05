@@ -85,7 +85,6 @@ func (s *Server) StartServer() error {
 	grp.GET("/exist/:publicKeyECDSA", s.ExistVault) // Check if Vault exists
 	//	grp.DELETE("/delete/:publicKeyECDSA", s.DeleteVault) // Delete Vault Data
 	grp.POST("/batch", s.CreateVaultBatch)
-	grp.GET("/task/:taskID", s.GetTaskResult)
 	grp.POST("/mldsa", s.CreateMldsaVault)  // Add MLDSA key to existing vault
 	grp.POST("/sign", s.SignMessages)       // Sign messages
 	grp.POST("/resend", s.ResendVaultEmail) // request server to send vault share , code through email again
@@ -200,48 +199,23 @@ func (s *Server) CreateVaultBatch(c echo.Context) error {
 		s.logger.Errorf("fail to count metric, err: %v", metricErr)
 	}
 
-	cacheKey := "vault:batch:" + req.SessionID
-	cached, err := s.redis.Get(c.Request().Context(), cacheKey)
-	if err == nil && cached != "" {
-		return c.JSON(http.StatusOK, map[string]string{"task_id": cached})
+	result, err := s.redis.Get(c.Request().Context(), req.SessionID)
+	if err == nil && result != "" {
+		return c.NoContent(http.StatusOK)
 	}
 
-	taskInfo, err := s.client.Enqueue(asynq.NewTask(tasks.TypeKeygenBatch, buf),
+	setErr := s.redis.Set(c.Request().Context(), req.SessionID, req.SessionID, 8*time.Minute)
+	if setErr != nil {
+		s.logger.Errorf("fail to set session, err: %v", setErr)
+	}
+	_, err = s.client.Enqueue(asynq.NewTask(tasks.TypeKeygenBatch, buf),
 		asynq.MaxRetry(-1),
 		asynq.Timeout(7*time.Minute),
-		asynq.Retention(10*time.Minute),
 		asynq.Queue(tasks.QUEUE_NAME))
 	if err != nil {
 		return fmt.Errorf("fail to enqueue task, err: %w", err)
 	}
-
-	setErr := s.redis.Set(c.Request().Context(), cacheKey, taskInfo.ID, 8*time.Minute)
-	if setErr != nil {
-		s.logger.Errorf("fail to cache task id, err: %v", setErr)
-	}
-	return c.JSON(http.StatusOK, map[string]string{"task_id": taskInfo.ID})
-}
-
-func (s *Server) GetTaskResult(c echo.Context) error {
-	taskID := c.Param("taskID")
-	info, err := s.inspector.GetTaskInfo(tasks.QUEUE_NAME, taskID)
-	if err != nil {
-		s.logger.WithField("task_id", taskID).Warnf("task lookup failed: %v", err)
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "task not found"})
-	}
-	if info.State == asynq.TaskStateCompleted {
-		return c.JSONBlob(http.StatusOK, info.Result)
-	}
-	if info.State == asynq.TaskStateArchived {
-		s.logger.WithField("task_id", taskID).Errorf("task failed: %s", info.LastErr)
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"state": "failed",
-			"error": "task failed",
-		})
-	}
-	return c.JSON(http.StatusAccepted, map[string]string{
-		"state": info.State.String(),
-	})
+	return c.NoContent(http.StatusOK)
 }
 
 // ReshareVault is a handler to reshare a vault

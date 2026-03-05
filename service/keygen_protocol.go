@@ -5,9 +5,19 @@ import (
 )
 
 const (
-	KeygenTimeout = 3 * time.Minute
-	PollInterval  = 100 * time.Millisecond
+	KeygenTimeout   = 3 * time.Minute
+	PollInterval    = 100 * time.Millisecond
+	StatusDone      = "done"
+	StatusFailed    = "failed"
+	StatusTimeout   = "timeout"
+	StatusMessageID = "batch-status"
 )
+
+type ProtocolStatus struct {
+	Protocol string `json:"protocol"`
+	Status   string `json:"status"`
+	Error    string `json:"error,omitempty"`
+}
 
 type OutboundMsg struct {
 	To   string // target party ("" = broadcast to all peers)
