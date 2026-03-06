@@ -14,7 +14,6 @@ type MPCReshareProtocol struct {
 	keyshareHandle Handle
 	wrapper        *MPCWrapperImp
 	finished       bool
-	outBuffer      []OutboundMsg
 	cachedResult   *PhaseResult
 	cachedErr      error
 }
@@ -54,24 +53,22 @@ func (p *MPCReshareProtocol) MessageID() string  { return p.msgID }
 func (p *MPCReshareProtocol) IsFinished() bool   { return p.finished }
 
 func (p *MPCReshareProtocol) DrainOutbound(parties []string) ([]OutboundMsg, error) {
-	buffered := p.outBuffer
-	p.outBuffer = nil
-
+	var msgs []OutboundMsg
 	for {
 		outbound, err := p.wrapper.QcSessionOutputMessage(p.session)
 		if err != nil {
-			return buffered, fmt.Errorf("%s QC output message: %w", p.name, err)
+			return msgs, fmt.Errorf("%s QC output message: %w", p.name, err)
 		}
 		if len(outbound) == 0 {
 			break
 		}
-		msgs, err := p.resolveReceivers(outbound, parties)
+		resolved, err := p.resolveReceivers(outbound, parties)
 		if err != nil {
-			return buffered, err
+			return msgs, err
 		}
-		buffered = append(buffered, msgs...)
+		msgs = append(msgs, resolved...)
 	}
-	return buffered, nil
+	return msgs, nil
 }
 
 func (p *MPCReshareProtocol) resolveReceivers(outbound []byte, parties []string) ([]OutboundMsg, error) {
