@@ -53,6 +53,10 @@ func (p *FroztReshareProtocol) DrainOutbound(parties []string) ([]OutboundMsg, e
 	buffered := p.outBuffer
 	p.outBuffer = nil
 
+	if p.finished {
+		return buffered, nil
+	}
+
 	for {
 		msg, err := frozt.ReshareSessionTakeMsg(p.session)
 		if err != nil {
@@ -100,10 +104,25 @@ func (p *FroztReshareProtocol) ProcessInbound(from string, body []byte) (bool, e
 		return false, fmt.Errorf("frozt reshare feed from %s: %w", from, err)
 	}
 	if finished {
+		p.drainRemainingOutbound()
 		p.finished = true
 		return true, nil
 	}
 	return false, nil
+}
+
+func (p *FroztReshareProtocol) drainRemainingOutbound() {
+	for {
+		msg, err := frozt.ReshareSessionTakeMsg(p.session)
+		if err != nil || len(msg) == 0 {
+			break
+		}
+		msgs, err := p.resolveReceivers(msg, p.parties)
+		if err != nil {
+			break
+		}
+		p.outBuffer = append(p.outBuffer, msgs...)
+	}
 }
 
 func (p *FroztReshareProtocol) Result() (*PhaseResult, error) {

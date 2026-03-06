@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	fromt "github.com/vultisig/frost-zm/go/fromt"
 	frozt "github.com/vultisig/frost-zm/go/frozt"
 	mldsaSession "github.com/vultisig/go-wrappers/mldsa"
 
@@ -57,7 +58,7 @@ func main() {
 	}
 
 	ecdsaPK := ""
-	if runTestWithResult("Test 2: ECDSA+EDDSA+FROZT partial (frozt fails)", func() (string, bool) {
+	if runTestWithResult("Test 2: ECDSA+EDDSA+FROZT keygen", func() (string, bool) {
 		return test2_PartialSuccess()
 	}, &ecdsaPK) {
 		passed++
@@ -81,13 +82,30 @@ func main() {
 		failed++
 	}
 
-	if runTest("Test 5: Full batch — all 5 succeed", test5_FullBatch) {
+	ecdsaPK5 := ""
+	if runTestWithResult("Test 5: Full batch — all 5 succeed", func() (string, bool) {
+		return test5_FullBatch()
+	}, &ecdsaPK5) {
 		passed++
 	} else {
 		failed++
 	}
 
 	if runTest("Test 6: Keygen then keysign all protocols", test6_KeygenThenKeysign) {
+		passed++
+	} else {
+		failed++
+	}
+
+	if runTest("Test 7: Batch reshare (ecdsa+eddsa)", func() bool {
+		return test7_BatchReshare(ecdsaPK5)
+	}) {
+		passed++
+	} else {
+		failed++
+	}
+
+	if runTest("Test 8: Batch import (ecdsa+eddsa+frozt+fromt)", test8_BatchImport) {
 		passed++
 	} else {
 		failed++
@@ -174,7 +192,7 @@ func test2_PartialSuccess() (string, bool) {
 	}
 
 	ok := true
-	for _, name := range []string{"ecdsa", "eddsa"} {
+	for _, name := range []string{"ecdsa", "eddsa", "frozt"} {
 		s, found := s1[name]
 		if !found || s.Status != service.StatusDone {
 			fmt.Printf("  FAIL: %s should have succeeded\n", name)
@@ -182,18 +200,6 @@ func test2_PartialSuccess() (string, bool) {
 		} else {
 			fmt.Printf("  OK: %s succeeded\n", name)
 		}
-	}
-
-	froztStatus, found := s1["frozt"]
-	if found && froztStatus.Status == service.StatusDone {
-		fmt.Println("  FAIL: frozt should have failed (no metadata sent)")
-		ok = false
-	} else {
-		errMsg := "not found"
-		if found {
-			errMsg = froztStatus.Status
-		}
-		fmt.Printf("  OK: frozt failed as expected: %s\n", errMsg)
 	}
 
 	ecdsaPK := ""
@@ -229,7 +235,7 @@ func test3_Append(ecdsaPK string) bool {
 	}
 
 	ok := true
-	for _, name := range []string{"ecdsa", "eddsa"} {
+	for _, name := range []string{"ecdsa", "eddsa", "frozt"} {
 		if s, found := s1[name]; found && s.Status == service.StatusDone {
 			fmt.Printf("  FAIL: %s should have been skipped (already in vault), got done\n", name)
 			ok = false
@@ -237,18 +243,16 @@ func test3_Append(ecdsaPK string) bool {
 			fmt.Printf("  OK: %s skipped (no status notification)\n", name)
 		}
 	}
-	for _, name := range []string{"frozt", "fromt"} {
-		s, found := s1[name]
-		if !found || s.Status != service.StatusDone {
-			errMsg := "not found"
-			if found {
-				errMsg = s.Error
-			}
-			fmt.Printf("  FAIL: %s should have succeeded: %s\n", name, errMsg)
-			ok = false
-		} else {
-			fmt.Printf("  OK: %s succeeded\n", name)
+	s, found := s1["fromt"]
+	if !found || s.Status != service.StatusDone {
+		errMsg := "not found"
+		if found {
+			errMsg = s.Error
 		}
+		fmt.Printf("  FAIL: fromt should have succeeded: %s\n", errMsg)
+		ok = false
+	} else {
+		fmt.Printf("  OK: fromt succeeded (pk: %s)\n", s.PublicKey)
 	}
 
 	return ok
@@ -263,7 +267,7 @@ func test4_Idempotent(ecdsaPK string) bool {
 	sessionID := uuid.New().String()
 	hexKey := randomHex(32)
 
-	code := postBatch(server1URL, sessionID, hexKey, party1, []string{"ecdsa"}, ecdsaPK)
+	code := postBatch(server1URL, sessionID, hexKey, party1, []string{"ecdsa", "eddsa"}, ecdsaPK)
 	if code != http.StatusNoContent {
 		fmt.Printf("  FAIL: expected 204, got %d\n", code)
 		return false
@@ -274,7 +278,7 @@ func test4_Idempotent(ecdsaPK string) bool {
 	return true
 }
 
-func test5_FullBatch() bool {
+func test5_FullBatch() (string, bool) {
 	sessionID := uuid.New().String()
 	hexKey := randomHex(32)
 	encSetup := createAndEncryptSetup(hexKey)
@@ -292,7 +296,7 @@ func test5_FullBatch() bool {
 	s1, s2 := getServerStatuses(sessionID, hexKey, 4*time.Minute)
 	if s1 == nil || s2 == nil {
 		fmt.Println("  FAIL: missing statuses")
-		return false
+		return "", false
 	}
 
 	ok := true
@@ -330,7 +334,11 @@ func test5_FullBatch() bool {
 		}
 	}
 
-	return ok
+	ecdsaPK := ""
+	if s, found := s1["ecdsa"]; found {
+		ecdsaPK = s.PublicKey
+	}
+	return ecdsaPK, ok
 }
 
 // --- keysign test ---
@@ -617,7 +625,7 @@ func postBatch(serverURL, sessionID, hexKey, localPartyID string, protocols []st
 		reqBody["public_key"] = publicKey
 	}
 	body, _ := json.Marshal(reqBody)
-	resp, err := httpClient.Post(serverURL+"/vault/batch", "application/json", bytes.NewReader(body))
+	resp, err := httpClient.Post(serverURL+"/vault/batch/keygen", "application/json", bytes.NewReader(body))
 	if err != nil {
 		fmt.Printf("  POST failed: %v\n", err)
 		return 0
@@ -906,4 +914,478 @@ func envOrDefault(key, def string) string {
 func fatal(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "FATAL: "+format+"\n", args...)
 	os.Exit(1)
+}
+
+// --- batch reshare test ---
+
+func test7_BatchReshare(ecdsaPK string) bool {
+	if ecdsaPK == "" {
+		fmt.Println("  SKIP: no ECDSA pubkey from Test 5")
+		return false
+	}
+
+	sessionID := uuid.New().String()
+	hexKey := randomHex(32)
+
+	postReshare(server1URL, sessionID, hexKey, party1, ecdsaPK, []string{"ecdsa", "eddsa"})
+	postReshare(server2URL, sessionID, hexKey, party2, ecdsaPK, []string{"ecdsa", "eddsa"})
+	waitForParties(relayURL, sessionID, 2, 30*time.Second)
+	startSession(relayURL, sessionID, parties)
+
+	s1, s2 := getServerStatuses(sessionID, hexKey, 4*time.Minute)
+	if s1 == nil || s2 == nil {
+		fmt.Println("  FAIL: no statuses received")
+		return false
+	}
+
+	ok := true
+	for _, name := range []string{"ecdsa", "eddsa"} {
+		st1, f1 := s1[name]
+		st2, f2 := s2[name]
+		if !f1 || st1.Status != service.StatusDone {
+			errMsg := "not found"
+			if f1 {
+				errMsg = st1.Error
+			}
+			fmt.Printf("  FAIL: server1 %s reshare failed: %s\n", name, errMsg)
+			ok = false
+			continue
+		}
+		if !f2 || st2.Status != service.StatusDone {
+			fmt.Printf("  FAIL: server2 %s reshare failed\n", name)
+			ok = false
+			continue
+		}
+		if st1.PublicKey != st2.PublicKey {
+			fmt.Printf("  FAIL: %s reshare keys don't match\n", name)
+			ok = false
+		} else {
+			pk := st1.PublicKey
+			if len(pk) > 16 {
+				pk = pk[:16]
+			}
+			fmt.Printf("  OK: %s reshare succeeded (pk: %s...)\n", name, pk)
+		}
+	}
+	return ok
+}
+
+func postReshare(serverURL, sessionID, hexKey, localPartyID, publicKey string, protocols []string) int {
+	reqBody := map[string]any{
+		"public_key":          publicKey,
+		"session_id":          sessionID,
+		"hex_encryption_key":  hexKey,
+		"local_party_id":      localPartyID,
+		"encryption_password": "test-password",
+		"email":               "test@test.com",
+		"old_parties":         parties,
+		"protocols":           protocols,
+	}
+	body, _ := json.Marshal(reqBody)
+	resp, err := httpClient.Post(serverURL+"/vault/batch/reshare", "application/json", bytes.NewReader(body))
+	if err != nil {
+		fmt.Printf("  POST reshare failed: %v\n", err)
+		return 0
+	}
+	defer resp.Body.Close()
+	fmt.Printf("  POST reshare %s → %d\n", serverURL, resp.StatusCode)
+	return resp.StatusCode
+}
+
+// --- batch import test ---
+
+func test8_BatchImport() bool {
+	sessionID := uuid.New().String()
+	hexKey := randomHex(32)
+	importParties := []string{"orchestrator", party1, party2}
+
+	ecdsaPrivKey := randomBytes(32)
+	eddsaPrivKey := randomBytes(32)
+	eddsaPrivKey[31] = 0 // ensure < Ed25519 curve order (~2^252)
+	chainCode := randomBytes(32)
+
+	ecdsaWrapper := service.NewMPCWrapperImp(false, false)
+	ecdsaHandle, ecdsaSetup, err := ecdsaWrapper.KeyImportInitiatorNew(ecdsaPrivKey, chainCode, 2, importParties)
+	if err != nil {
+		fmt.Printf("  FAIL: ECDSA import initiator: %v\n", err)
+		return false
+	}
+
+	eddsaWrapper := service.NewMPCWrapperImp(true, false)
+	eddsaHandle, eddsaSetup, err := eddsaWrapper.KeyImportInitiatorNew(eddsaPrivKey, nil, 2, importParties)
+	if err != nil {
+		fmt.Printf("  FAIL: EdDSA import initiator: %v\n", err)
+		_ = ecdsaWrapper.KeygenSessionFree(ecdsaHandle)
+		return false
+	}
+
+	froztParties := []frozt.PartyInfo{
+		{FrostID: 1, Name: []byte("orchestrator")},
+		{FrostID: 2, Name: []byte(party1)},
+		{FrostID: 3, Name: []byte(party2)},
+	}
+	froztSeed := randomBytes(32)
+	froztSetup, err := frozt.KeyImportSetupMsgNew(3, 2, froztParties, 0, 1, froztSeed, 0)
+	if err != nil {
+		fmt.Printf("  FAIL: frozt import setup: %v\n", err)
+		return false
+	}
+
+	fromtParties := []fromt.PartyInfo{
+		{FrostID: 1, Name: []byte("orchestrator")},
+		{FrostID: 2, Name: []byte(party1)},
+		{FrostID: 3, Name: []byte(party2)},
+	}
+	fromtSpendKey := randomBytes(32)
+	fromtSetup, err := fromt.KeyImportSetupMsgNew(3, 2, fromtParties, 0, 0, 1, fromtSpendKey)
+	if err != nil {
+		fmt.Printf("  FAIL: fromt import setup: %v\n", err)
+		return false
+	}
+
+	froztSession, err := service.NewFroztImportProtocol("frozt", "p-frozt", froztSetup, "orchestrator")
+	if err != nil {
+		fmt.Printf("  FAIL: frozt orchestrator session: %v\n", err)
+		return false
+	}
+	fromtSession, err := service.NewFromtImportProtocol("fromt", "p-fromt", fromtSetup, "orchestrator")
+	if err != nil {
+		fmt.Printf("  FAIL: fromt orchestrator session: %v\n", err)
+		return false
+	}
+
+	uploadSetupMessage(relayURL, sessionID, encryptAndEncode(ecdsaSetup, hexKey))
+	uploadSetupMessageWithID(relayURL, sessionID, encryptAndEncode(eddsaSetup, hexKey), "eddsa_key_import")
+	uploadSetupMessageWithID(relayURL, sessionID, encryptAndEncode(froztSetup, hexKey), "frozt")
+	uploadSetupMessageWithID(relayURL, sessionID, encryptAndEncode(fromtSetup, hexKey), "fromt")
+
+	postImport(server1URL, sessionID, hexKey, party1, []string{"ecdsa", "eddsa", "frozt", "fromt"}, nil)
+	postImport(server2URL, sessionID, hexKey, party2, []string{"ecdsa", "eddsa", "frozt", "fromt"}, nil)
+	registerWithRelay(sessionID, "orchestrator")
+	waitForParties(relayURL, sessionID, 3, 30*time.Second)
+	startSession(relayURL, sessionID, importParties)
+
+	orchProtocols := []service.KeygenProtocol{
+		&mpcInitiatorProtocol{protocolName: "ecdsa", protocolMsgID: "p-ecdsa", handle: ecdsaHandle, wrapper: ecdsaWrapper},
+		&mpcInitiatorProtocol{protocolName: "eddsa", protocolMsgID: "p-eddsa", handle: eddsaHandle, wrapper: eddsaWrapper},
+		froztSession,
+		fromtSession,
+	}
+	defer func() {
+		for _, p := range orchProtocols {
+			_ = p.Free()
+		}
+	}()
+
+	loopOK := runOrchestratorLoop(orchProtocols, sessionID, hexKey, "orchestrator", importParties, 4*time.Minute)
+	if !loopOK {
+		fmt.Println("  WARN: orchestrator loop did not finish all protocols")
+	}
+
+	completeSession(sessionID, "orchestrator")
+
+	s1, s2 := getImportServerStatuses(sessionID, hexKey, importParties, 4*time.Minute)
+
+	ok := true
+	for _, name := range []string{"ecdsa", "eddsa", "frozt", "fromt"} {
+		st1, f1 := s1[name]
+		st2, f2 := s2[name]
+		if !f1 || st1.Status != service.StatusDone {
+			errMsg := "not found"
+			if f1 {
+				errMsg = string(st1.Status) + ": " + st1.Error
+			}
+			fmt.Printf("  FAIL: server1 %s import failed: %s\n", name, errMsg)
+			ok = false
+			continue
+		}
+		if !f2 || st2.Status != service.StatusDone {
+			errMsg := "not found"
+			if f2 {
+				errMsg = string(st2.Status) + ": " + st2.Error
+			}
+			fmt.Printf("  FAIL: server2 %s import failed: %s\n", name, errMsg)
+			ok = false
+			continue
+		}
+		pk := st1.PublicKey
+		if len(pk) > 16 {
+			pk = pk[:16]
+		}
+		fmt.Printf("  OK: %s import succeeded (pk: %s...)\n", name, pk)
+	}
+	return ok
+}
+
+func postImport(serverURL, sessionID, hexKey, localPartyID string, protocols, chains []string) int {
+	reqBody := map[string]any{
+		"name":                "test-import-vault",
+		"session_id":          sessionID,
+		"hex_encryption_key":  hexKey,
+		"local_party_id":      localPartyID,
+		"encryption_password": "test-password",
+		"email":               "test@test.com",
+		"protocols":           protocols,
+	}
+	if len(chains) > 0 {
+		reqBody["chains"] = chains
+	}
+	body, _ := json.Marshal(reqBody)
+	resp, err := httpClient.Post(serverURL+"/vault/batch/import", "application/json", bytes.NewReader(body))
+	if err != nil {
+		fmt.Printf("  POST import failed: %v\n", err)
+		return 0
+	}
+	defer resp.Body.Close()
+	fmt.Printf("  POST import %s → %d\n", serverURL, resp.StatusCode)
+	return resp.StatusCode
+}
+
+func registerWithRelay(sessionID, localPartyID string) {
+	body := []byte("[\"" + localPartyID + "\"]")
+	resp, err := httpClient.Post(relayURL+"/"+sessionID, "application/json", bytes.NewReader(body))
+	if err != nil {
+		fmt.Printf("  register relay failed: %v\n", err)
+		return
+	}
+	resp.Body.Close()
+}
+
+func completeSession(sessionID, localPartyID string) {
+	body := []byte("[\"" + localPartyID + "\"]")
+	req, _ := http.NewRequest("POST", relayURL+"/complete/"+sessionID, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		fmt.Printf("  complete session failed: %v\n", err)
+		return
+	}
+	resp.Body.Close()
+}
+
+func getImportServerStatuses(sessionID, hexKey string, importParties []string, timeout time.Duration) (map[string]service.ProtocolStatus, map[string]service.ProtocolStatus) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		resp, err := httpClient.Get(relayURL + "/complete/" + sessionID)
+		if err != nil {
+			time.Sleep(time.Second)
+			continue
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			time.Sleep(time.Second)
+			continue
+		}
+		var completed []string
+		_ = json.Unmarshal(body, &completed)
+		if len(completed) >= len(importParties) {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	raw1 := collectBatchStatus(sessionID, hexKey, party2)
+	raw2 := collectBatchStatus(sessionID, hexKey, party1)
+	return toStatusMap(raw1), toStatusMap(raw2)
+}
+
+// --- mpc initiator protocol (wraps MPC import initiator handle) ---
+
+type mpcInitiatorProtocol struct {
+	protocolName  string
+	protocolMsgID string
+	handle        service.Handle
+	wrapper       *service.MPCWrapperImp
+	done          bool
+}
+
+func (p *mpcInitiatorProtocol) Name() string     { return p.protocolName }
+func (p *mpcInitiatorProtocol) MessageID() string { return p.protocolMsgID }
+func (p *mpcInitiatorProtocol) IsFinished() bool  { return p.done }
+
+func (p *mpcInitiatorProtocol) DrainOutbound(allParties []string) ([]service.OutboundMsg, error) {
+	var msgs []service.OutboundMsg
+	for {
+		out, err := p.wrapper.KeygenSessionOutputMessage(p.handle)
+		if err != nil {
+			return msgs, err
+		}
+		if len(out) == 0 {
+			break
+		}
+		for i := range allParties {
+			receiver, rErr := p.wrapper.KeygenSessionMessageReceiver(p.handle, out, i)
+			if rErr != nil {
+				return msgs, rErr
+			}
+			if receiver == "" {
+				continue
+			}
+			msgs = append(msgs, service.OutboundMsg{To: receiver, Body: out})
+		}
+	}
+	return msgs, nil
+}
+
+func (p *mpcInitiatorProtocol) ProcessInbound(_ string, body []byte) (bool, error) {
+	finished, err := p.wrapper.KeygenSessionInputMessage(p.handle, body)
+	if err != nil {
+		return false, err
+	}
+	if finished {
+		p.done = true
+	}
+	return finished, nil
+}
+
+func (p *mpcInitiatorProtocol) Result() (*service.PhaseResult, error) {
+	return nil, nil
+}
+
+func (p *mpcInitiatorProtocol) Free() error {
+	return p.wrapper.KeygenSessionFree(p.handle)
+}
+
+// --- orchestrator protocol loop ---
+
+type relayMessage struct {
+	From string `json:"from"`
+	Body string `json:"body"`
+	Hash string `json:"hash"`
+}
+
+func runOrchestratorLoop(
+	protocols []service.KeygenProtocol,
+	sessionID, hexKey, localPartyID string,
+	allParties []string,
+	timeout time.Duration,
+) bool {
+	for _, p := range protocols {
+		outbound, _ := p.DrainOutbound(allParties)
+		for _, msg := range outbound {
+			sendProtocolMsg(sessionID, hexKey, localPartyID, msg.To, msg.Body, p.MessageID())
+		}
+	}
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		allDone := true
+		progress := false
+
+		for _, p := range protocols {
+			if p.IsFinished() {
+				continue
+			}
+			allDone = false
+
+			messages := downloadProtocolMessages(sessionID, localPartyID, p.MessageID())
+			for _, msg := range messages {
+				decrypted := decryptRelayMessage(msg.Body, hexKey)
+				if decrypted == nil {
+					deleteProtocolMessage(sessionID, localPartyID, msg.Hash, p.MessageID())
+					continue
+				}
+				finished, procErr := p.ProcessInbound(msg.From, decrypted)
+				if procErr != nil {
+					fmt.Printf("  orchestrator %s inbound from %s: %v\n", p.Name(), msg.From, procErr)
+				}
+				deleteProtocolMessage(sessionID, localPartyID, msg.Hash, p.MessageID())
+				progress = true
+				if finished {
+					fmt.Printf("  orchestrator %s finished\n", p.Name())
+					break
+				}
+			}
+
+			outbound, _ := p.DrainOutbound(allParties)
+			for _, msg := range outbound {
+				sendProtocolMsg(sessionID, hexKey, localPartyID, msg.To, msg.Body, p.MessageID())
+				progress = true
+			}
+		}
+
+		if allDone {
+			return true
+		}
+		if !progress {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	for _, p := range protocols {
+		if !p.IsFinished() {
+			fmt.Printf("  orchestrator %s timed out\n", p.Name())
+		}
+	}
+	return false
+}
+
+func downloadProtocolMessages(sessionID, localPartyID, messageID string) []relayMessage {
+	url := relayURL + "/message/" + sessionID + "/" + localPartyID
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("message_id", messageID)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+	body, _ := io.ReadAll(resp.Body)
+	var messages []relayMessage
+	_ = json.Unmarshal(body, &messages)
+
+	var filtered []relayMessage
+	for _, m := range messages {
+		if m.From == localPartyID {
+			continue
+		}
+		filtered = append(filtered, m)
+	}
+	return filtered
+}
+
+func deleteProtocolMessage(sessionID, localPartyID, hash, messageID string) {
+	req, _ := http.NewRequest("DELETE", relayURL+"/message/"+sessionID+"/"+localPartyID+"/"+hash, nil)
+	if messageID != "" {
+		req.Header.Set("message_id", messageID)
+	}
+	resp, _ := httpClient.Do(req)
+	if resp != nil {
+		resp.Body.Close()
+	}
+}
+
+func sendProtocolMsg(sessionID, hexKey, from, to string, data []byte, messageID string) {
+	innerB64 := base64.StdEncoding.EncodeToString(data)
+	encrypted, err := encryptGCM(innerB64, hexKey)
+	if err != nil {
+		return
+	}
+	body := base64.StdEncoding.EncodeToString([]byte(encrypted))
+	hash := md5.Sum([]byte(innerB64))
+
+	msg, _ := json.Marshal(struct {
+		SessionID string   `json:"session_id"`
+		From      string   `json:"from"`
+		To        []string `json:"to"`
+		Body      string   `json:"body"`
+		Hash      string   `json:"hash"`
+	}{
+		SessionID: sessionID,
+		From:      from,
+		To:        []string{to},
+		Body:      body,
+		Hash:      hex.EncodeToString(hash[:]),
+	})
+	req, _ := http.NewRequest("POST", relayURL+"/message/"+sessionID, bytes.NewReader(msg))
+	req.Header.Set("Content-Type", "application/json")
+	if messageID != "" {
+		req.Header.Set("message_id", messageID)
+	}
+	resp, _ := httpClient.Do(req)
+	if resp != nil {
+		resp.Body.Close()
+	}
 }

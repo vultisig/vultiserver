@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -13,6 +14,7 @@ import (
 	keygen "github.com/vultisig/commondata/go/vultisig/keygen/v1"
 	vaultType "github.com/vultisig/commondata/go/vultisig/vault/v1"
 
+	"github.com/vultisig/vultiserver/common"
 	"github.com/vultisig/vultiserver/internal/types"
 	"github.com/vultisig/vultiserver/relay"
 )
@@ -69,19 +71,19 @@ func (t *DKLSTssService) ProcessBatchReshare(req types.BatchReshareRequest) (*Ke
 		"protocols": protocolsToRun,
 	}).Info("Batch reshare session started")
 
-	setupCtx, setupCancel := context.WithTimeout(context.Background(), time.Minute)
-	defer setupCancel()
-	encryptedSetupMsg, err := relayClient.WaitForSetupMessage(setupCtx, req.SessionID, "")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get setup message: %w", err)
+	sortedParties := make([]string, len(partiesJoined))
+	copy(sortedParties, partiesJoined)
+	sort.Strings(sortedParties)
+	isCreator := sortedParties[0] == req.LocalPartyId
+
+	if isCreator {
+		err = t.createAndUploadQcSetups(protocolsToRun, vault, partiesJoined, req, relayClient)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create QC setups: %w", err)
+		}
 	}
 
-	setupMsg, err := t.decodeDecryptMessage(encryptedSetupMsg, req.HexEncryptionKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode setup message: %w", err)
-	}
-
-	protocols, err := t.initReshareProtocols(protocolsToRun, setupMsg, req.LocalPartyId, vault, relayClient, req.SessionID, req.HexEncryptionKey)
+	protocols, err := t.initReshareProtocols(protocolsToRun, req.LocalPartyId, vault, relayClient, req.SessionID, req.HexEncryptionKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init reshare protocols: %w", err)
 	}
@@ -136,21 +138,16 @@ func allSucceeded(result *KeygenResult, protocols []string) bool {
 }
 
 func (t *DKLSTssService) initReshareProtocols(
-	names []string, setupMsg []byte, localPartyID string,
+	names []string, localPartyID string,
 	vault *vaultType.Vault,
 	relayClient *relay.Client, sessionID, hexEncryptionKey string,
 ) ([]KeygenProtocol, error) {
 	var protocols []KeygenProtocol
 	for _, name := range names {
-		protocolSetupMsg := setupMsg
-
-		if name == "frozt" || name == "fromt" {
-			perProtocolSetup, fetchErr := t.fetchProtocolSetupMessage(relayClient, sessionID, hexEncryptionKey, "p-"+name+"-reshare-setup")
-			if fetchErr != nil {
-				freeProtocols(protocols)
-				return nil, fmt.Errorf("init reshare %s: %w", name, fetchErr)
-			}
-			protocolSetupMsg = perProtocolSetup
+		setupMsg, fetchErr := t.fetchProtocolSetupMessage(relayClient, sessionID, hexEncryptionKey, "p-"+name+"-reshare-setup")
+		if fetchErr != nil {
+			freeProtocols(protocols)
+			return nil, fmt.Errorf("init reshare %s: %w", name, fetchErr)
 		}
 
 		keyshareBytes, err := getVaultKeyshare(vault, name)
@@ -159,7 +156,7 @@ func (t *DKLSTssService) initReshareProtocols(
 			return nil, fmt.Errorf("get keyshare for %s: %w", name, err)
 		}
 
-		p, err := t.initReshareProtocol(name, protocolSetupMsg, localPartyID, keyshareBytes)
+		p, err := t.initReshareProtocol(name, setupMsg, localPartyID, keyshareBytes)
 		if err != nil {
 			freeProtocols(protocols)
 			return nil, fmt.Errorf("init reshare %s: %w", name, err)
@@ -167,6 +164,90 @@ func (t *DKLSTssService) initReshareProtocols(
 		protocols = append(protocols, p)
 	}
 	return protocols, nil
+}
+
+func (t *DKLSTssService) createAndUploadQcSetups(
+	protocols []string,
+	vault *vaultType.Vault,
+	parties []string,
+	req types.BatchReshareRequest,
+	relayClient *relay.Client,
+) error {
+	oldIndices := mapPartyIndices(parties, req.OldParties)
+	newIndices := allIndices(len(parties))
+
+	for _, name := range protocols {
+		if name != "ecdsa" && name != "eddsa" {
+			continue
+		}
+
+		isEdDSA := name == "eddsa"
+		wrapper := NewMPCWrapperImp(isEdDSA, false)
+
+		keyshareBytes, err := getVaultKeyshare(vault, name)
+		if err != nil {
+			return fmt.Errorf("get keyshare for QC setup %s: %w", name, err)
+		}
+
+		keyshareHandle, err := wrapper.KeyshareFromBytes(keyshareBytes)
+		if err != nil {
+			return fmt.Errorf("load keyshare for QC setup %s: %w", name, err)
+		}
+
+		setupMsg, err := wrapper.QcSetupMsgNew(keyshareHandle, len(parties), parties, oldIndices, newIndices)
+		_ = wrapper.KeyshareFree(keyshareHandle)
+		if err != nil {
+			return fmt.Errorf("create QC setup for %s: %w", name, err)
+		}
+
+		encrypted, err := encodeEncryptMessage(setupMsg, req.HexEncryptionKey)
+		if err != nil {
+			return fmt.Errorf("encrypt QC setup for %s: %w", name, err)
+		}
+
+		messageID := "p-" + name + "-reshare-setup"
+		err = relayClient.UploadSetupMessage(req.SessionID, messageID, encrypted)
+		if err != nil {
+			return fmt.Errorf("upload QC setup for %s: %w", name, err)
+		}
+
+		t.logger.WithFields(logrus.Fields{
+			"protocol":  name,
+			"messageID": messageID,
+		}).Info("Uploaded QC setup message")
+	}
+	return nil
+}
+
+func encodeEncryptMessage(msg []byte, hexEncryptionKey string) (string, error) {
+	inner := base64.StdEncoding.EncodeToString(msg)
+	encrypted, err := common.EncryptGCM([]byte(inner), hexEncryptionKey)
+	if err != nil {
+		return "", fmt.Errorf("encrypt: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(encrypted), nil
+}
+
+func mapPartyIndices(allParties []string, subset []string) []int {
+	indexMap := make(map[string]int)
+	for i, p := range allParties {
+		indexMap[p] = i
+	}
+	var indices []int
+	for _, p := range subset {
+		if idx, ok := indexMap[p]; ok {
+			indices = append(indices, idx)
+		}
+	}
+	return indices
+}
+
+func allIndices(n int) []int {
+	indices := make([]int, n)
+	for i := range indices {
+		indices[i] = i
+	}
+	return indices
 }
 
 func (t *DKLSTssService) initReshareProtocol(

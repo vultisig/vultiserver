@@ -52,6 +52,10 @@ func (p *FromtKeygenProtocol) DrainOutbound(parties []string) ([]OutboundMsg, er
 	buffered := p.outBuffer
 	p.outBuffer = nil
 
+	if p.finished {
+		return buffered, nil
+	}
+
 	for {
 		msg, err := fromt.DkgSessionTakeMsg(p.session)
 		if err != nil {
@@ -99,10 +103,25 @@ func (p *FromtKeygenProtocol) ProcessInbound(from string, body []byte) (bool, er
 		return false, fmt.Errorf("fromt feed from %s: %w", from, err)
 	}
 	if finished {
+		p.drainRemainingOutbound()
 		p.finished = true
 		return true, nil
 	}
 	return false, nil
+}
+
+func (p *FromtKeygenProtocol) drainRemainingOutbound() {
+	for {
+		msg, err := fromt.DkgSessionTakeMsg(p.session)
+		if err != nil || len(msg) == 0 {
+			break
+		}
+		msgs, err := p.resolveReceivers(msg, p.parties)
+		if err != nil {
+			break
+		}
+		p.outBuffer = append(p.outBuffer, msgs...)
+	}
 }
 
 func (p *FromtKeygenProtocol) Result() (*PhaseResult, error) {
