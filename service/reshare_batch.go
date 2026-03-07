@@ -47,16 +47,12 @@ func (t *DKLSTssService) ProcessBatchReshare(req types.BatchReshareRequest) (*Ke
 	if err != nil {
 		return nil, fmt.Errorf("failed to register session: %w", err)
 	}
+	sessionCompleted := false
 	defer func() {
-		completeErr := relayClient.CompleteSession(req.SessionID, req.LocalPartyId)
-		if completeErr != nil {
-			t.logger.WithFields(logrus.Fields{
-				"session": req.SessionID,
-				"error":   completeErr,
-			}).Warn("failed to complete session")
+		if !sessionCompleted {
+			_ = relayClient.CompleteSession(req.SessionID, req.LocalPartyId)
 		}
 	}()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -91,14 +87,6 @@ func (t *DKLSTssService) ProcessBatchReshare(req types.BatchReshareRequest) (*Ke
 
 	t.runKeygen(protocols, req.SessionID, req.HexEncryptionKey, req.LocalPartyId, partiesJoined)
 
-	_, checkErr := relayClient.CheckCompletedParties(req.SessionID, partiesJoined)
-	if checkErr != nil {
-		t.logger.WithFields(logrus.Fields{
-			"session": req.SessionID,
-			"error":   checkErr,
-		}).Error("Failed to check completed parties")
-	}
-
 	result := t.collectResults(protocols, req.Protocols, protocolsToRun)
 
 	if !allSucceeded(result, protocolsToRun) {
@@ -110,6 +98,23 @@ func (t *DKLSTssService) ProcessBatchReshare(req types.BatchReshareRequest) (*Ke
 		if backupErr != nil {
 			return nil, fmt.Errorf("failed to store reshared vault: %w", backupErr)
 		}
+	}
+
+	completeErr := relayClient.CompleteSession(req.SessionID, req.LocalPartyId)
+	sessionCompleted = true
+	if completeErr != nil {
+		t.logger.WithFields(logrus.Fields{
+			"session": req.SessionID,
+			"error":   completeErr,
+		}).Warn("failed to complete session")
+	}
+
+	_, checkErr := relayClient.CheckCompletedParties(req.SessionID, partiesJoined)
+	if checkErr != nil {
+		t.logger.WithFields(logrus.Fields{
+			"session": req.SessionID,
+			"error":   checkErr,
+		}).Error("Failed to check completed parties")
 	}
 
 	return result, nil

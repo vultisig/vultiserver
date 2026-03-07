@@ -94,12 +94,12 @@ func (t *DKLSTssService) fromtSign(
 		return nil, fmt.Errorf("fromt sign setup: %w", err)
 	}
 
-	pk, err := fromt.KeySharePublicKey(keyShare)
+	keyPackage, pubKeyPackage, err := extractFromtBundleParts(keyShare)
 	if err != nil {
-		return nil, fmt.Errorf("fromt extract pubkey: %w", err)
+		return nil, fmt.Errorf("fromt extract bundle parts: %w", err)
 	}
 
-	session, err := fromt.SignSessionFromSetup(setup, []byte(localPartyID), keyShare, pk)
+	session, err := fromt.SignSessionFromSetup(setup, []byte(localPartyID), keyPackage, pubKeyPackage)
 	if err != nil {
 		return nil, fmt.Errorf("fromt sign session: %w", err)
 	}
@@ -153,6 +153,13 @@ func (t *DKLSTssService) fromtSign(
 			progress = true
 
 			if finished {
+				for {
+					ob, obErr := fromt.SignSessionTakeMsg(session)
+					if obErr != nil || len(ob) == 0 {
+						break
+					}
+					t.sendFromtSessionMsg(session, ob, sessionID, hexEncryptionKey, localPartyID, parties, msgID)
+				}
 				finalSig, resErr := fromt.SignSessionResult(session)
 				if resErr != nil {
 					return nil, fmt.Errorf("fromt sign result: %w", resErr)
@@ -204,4 +211,50 @@ func (t *DKLSTssService) sendFromtSessionMsg(
 		}
 		_ = messenger.Send(localPartyID, string(receiver), encoded)
 	}
+}
+
+func extractFromtBundleParts(bundle []byte) (keyPackage, pubKeyPackage []byte, err error) {
+	pos := 0
+	if len(bundle) < 1+1+32+4 {
+		return nil, nil, fmt.Errorf("fromt bundle too short")
+	}
+
+	version := bundle[pos]
+	pos++
+	if version != 1 && version != 2 {
+		return nil, nil, fmt.Errorf("fromt bundle unknown version %d", version)
+	}
+
+	pos++ // network
+	pos += 32 // view_key
+
+	if version >= 2 {
+		if pos+8 > len(bundle) {
+			return nil, nil, fmt.Errorf("fromt bundle truncated at birthday")
+		}
+		pos += 8 // birthday
+	}
+
+	if pos+4 > len(bundle) {
+		return nil, nil, fmt.Errorf("fromt bundle truncated at kp_len")
+	}
+	kpLen := int(binary.LittleEndian.Uint32(bundle[pos : pos+4]))
+	pos += 4
+	if pos+kpLen > len(bundle) {
+		return nil, nil, fmt.Errorf("fromt bundle truncated at key_package")
+	}
+	keyPackage = bundle[pos : pos+kpLen]
+	pos += kpLen
+
+	if pos+4 > len(bundle) {
+		return nil, nil, fmt.Errorf("fromt bundle truncated at pkp_len")
+	}
+	pkpLen := int(binary.LittleEndian.Uint32(bundle[pos : pos+4]))
+	pos += 4
+	if pos+pkpLen > len(bundle) {
+		return nil, nil, fmt.Errorf("fromt bundle truncated at pub_key_package")
+	}
+	pubKeyPackage = bundle[pos : pos+pkpLen]
+
+	return keyPackage, pubKeyPackage, nil
 }

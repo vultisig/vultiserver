@@ -119,23 +119,27 @@ func main() {
 
 func runTest(name string, fn func() bool) bool {
 	fmt.Printf("--- %s ---\n", name)
+	start := time.Now()
 	ok := fn()
+	elapsed := time.Since(start)
 	if ok {
-		fmt.Printf("--- PASS: %s ---\n\n", name)
+		fmt.Printf("--- PASS: %s (%.1fs) ---\n\n", name, elapsed.Seconds())
 	} else {
-		fmt.Printf("--- FAIL: %s ---\n\n", name)
+		fmt.Printf("--- FAIL: %s (%.1fs) ---\n\n", name, elapsed.Seconds())
 	}
 	return ok
 }
 
 func runTestWithResult(name string, fn func() (string, bool), result *string) bool {
 	fmt.Printf("--- %s ---\n", name)
+	start := time.Now()
 	r, ok := fn()
 	*result = r
+	elapsed := time.Since(start)
 	if ok {
-		fmt.Printf("--- PASS: %s ---\n\n", name)
+		fmt.Printf("--- PASS: %s (%.1fs) ---\n\n", name, elapsed.Seconds())
 	} else {
-		fmt.Printf("--- FAIL: %s ---\n\n", name)
+		fmt.Printf("--- FAIL: %s (%.1fs) ---\n\n", name, elapsed.Seconds())
 	}
 	return ok
 }
@@ -769,7 +773,7 @@ func sendRelayMessage(relayURL, sessionID, hexKey, from, to string, data []byte,
 		return
 	}
 	body := base64.StdEncoding.EncodeToString([]byte(encrypted))
-	hash := md5.Sum([]byte(body))
+	hash := md5.Sum([]byte(from + ":" + body))
 	msg, _ := json.Marshal(struct {
 		SessionID string   `json:"session_id"`
 		From      string   `json:"from"`
@@ -1024,7 +1028,7 @@ func test8_BatchImport() bool {
 		{FrostID: 2, Name: []byte(party1)},
 		{FrostID: 3, Name: []byte(party2)},
 	}
-	froztSeed := randomBytes(32)
+	froztSeed := randomBytes(64)
 	froztSetup, err := frozt.KeyImportSetupMsgNew(3, 2, froztParties, 0, 1, froztSeed, 0)
 	if err != nil {
 		fmt.Printf("  FAIL: frozt import setup: %v\n", err)
@@ -1036,7 +1040,12 @@ func test8_BatchImport() bool {
 		{FrostID: 2, Name: []byte(party1)},
 		{FrostID: 3, Name: []byte(party2)},
 	}
-	fromtSpendKey := randomBytes(32)
+	fromtSeed := randomBytes(32)
+	fromtSpendKey, _, err := fromt.DeriveKeysFromSeed(fromtSeed)
+	if err != nil {
+		fmt.Printf("  FAIL: fromt derive spend key: %v\n", err)
+		return false
+	}
 	fromtSetup, err := fromt.KeyImportSetupMsgNew(3, 2, fromtParties, 0, 0, 1, fromtSpendKey)
 	if err != nil {
 		fmt.Printf("  FAIL: fromt import setup: %v\n", err)
@@ -1287,12 +1296,11 @@ func runOrchestratorLoop(
 				}
 				finished, procErr := p.ProcessInbound(msg.From, decrypted)
 				if procErr != nil {
-					fmt.Printf("  orchestrator %s inbound from %s: %v\n", p.Name(), msg.From, procErr)
+					fmt.Printf("  orchestrator %s process error from %s: %v\n", p.Name(), msg.From, procErr)
 				}
 				deleteProtocolMessage(sessionID, localPartyID, msg.Hash, p.MessageID())
 				progress = true
 				if finished {
-					fmt.Printf("  orchestrator %s finished\n", p.Name())
 					break
 				}
 			}
@@ -1364,7 +1372,7 @@ func sendProtocolMsg(sessionID, hexKey, from, to string, data []byte, messageID 
 		return
 	}
 	body := base64.StdEncoding.EncodeToString([]byte(encrypted))
-	hash := md5.Sum([]byte(innerB64))
+	hash := md5.Sum([]byte(from + ":" + innerB64))
 
 	msg, _ := json.Marshal(struct {
 		SessionID string   `json:"session_id"`

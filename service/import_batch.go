@@ -28,16 +28,12 @@ func (t *DKLSTssService) ProcessBatchImport(req types.BatchImportRequest) (*Keyg
 	if err != nil {
 		return nil, fmt.Errorf("failed to register session: %w", err)
 	}
+	sessionCompleted := false
 	defer func() {
-		completeErr := relayClient.CompleteSession(req.SessionID, req.LocalPartyId)
-		if completeErr != nil {
-			t.logger.WithFields(logrus.Fields{
-				"session": req.SessionID,
-				"error":   completeErr,
-			}).Warn("failed to complete session")
+		if !sessionCompleted {
+			_ = relayClient.CompleteSession(req.SessionID, req.LocalPartyId)
 		}
 	}()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -69,14 +65,6 @@ func (t *DKLSTssService) ProcessBatchImport(req types.BatchImportRequest) (*Keyg
 		}
 	}
 
-	_, checkErr := relayClient.CheckCompletedParties(req.SessionID, partiesJoined)
-	if checkErr != nil {
-		t.logger.WithFields(logrus.Fields{
-			"session": req.SessionID,
-			"error":   checkErr,
-		}).Error("Failed to check completed parties")
-	}
-
 	allNames := make([]string, 0, len(allProtocols))
 	for _, ip := range allProtocols {
 		allNames = append(allNames, ip.name)
@@ -92,6 +80,23 @@ func (t *DKLSTssService) ProcessBatchImport(req types.BatchImportRequest) (*Keyg
 		if backupErr != nil {
 			return nil, fmt.Errorf("failed to store imported vault: %w", backupErr)
 		}
+	}
+
+	completeErr := relayClient.CompleteSession(req.SessionID, req.LocalPartyId)
+	sessionCompleted = true
+	if completeErr != nil {
+		t.logger.WithFields(logrus.Fields{
+			"session": req.SessionID,
+			"error":   completeErr,
+		}).Warn("failed to complete session")
+	}
+
+	_, checkErr := relayClient.CheckCompletedParties(req.SessionID, partiesJoined)
+	if checkErr != nil {
+		t.logger.WithFields(logrus.Fields{
+			"session": req.SessionID,
+			"error":   checkErr,
+		}).Error("Failed to check completed parties")
 	}
 
 	return result, nil

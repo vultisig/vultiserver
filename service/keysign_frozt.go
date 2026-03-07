@@ -195,6 +195,13 @@ func (t *DKLSTssService) runFrostSignSession(
 			progress = true
 
 			if finished {
+				for {
+					ob, obErr := takeMsg(session)
+					if obErr != nil || len(ob) == 0 {
+						break
+					}
+					_ = t.sendFrostSessionMsg(session, ob, sessionID, hexEncryptionKey, localPartyID, parties, msgID, msgReceiver)
+				}
 				return result(session)
 			}
 		}

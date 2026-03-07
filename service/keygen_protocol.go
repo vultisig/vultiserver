@@ -100,6 +100,13 @@ type ProtocolExchanger struct {
 
 func runProtocolExchange(ctx context.Context, p KeygenProtocol, ex ProtocolExchanger) {
 	outbound, err := p.DrainOutbound(ex.Parties)
+	ex.Logger.WithFields(logrus.Fields{
+		"protocol": p.Name(),
+		"msgID":    p.MessageID(),
+		"outCount": len(outbound),
+		"parties":  ex.Parties,
+		"localID":  ex.LocalPartyID,
+	}).Info("protocol exchange started")
 	if len(outbound) > 0 {
 		sendErr := ex.SendFn(p.MessageID(), outbound, ex.SessionID, ex.HexEncryptionKey, ex.LocalPartyID, ex.Parties)
 		if sendErr != nil {
@@ -145,9 +152,19 @@ func runProtocolExchange(ctx context.Context, p KeygenProtocol, ex ProtocolExcha
 			}
 			body, decErr := ex.DecryptFn(msg.Body, ex.HexEncryptionKey)
 			if decErr != nil {
+				ex.Logger.WithFields(logrus.Fields{
+					"protocol": p.Name(),
+					"from":     msg.From,
+					"error":    decErr,
+				}).Warn("decrypt inbound failed")
 				_ = ex.RelayClient.DeleteMessageFromServer(ex.SessionID, ex.LocalPartyID, msg.Hash, p.MessageID())
 				continue
 			}
+			ex.Logger.WithFields(logrus.Fields{
+				"protocol": p.Name(),
+				"from":     msg.From,
+				"bodyLen":  len(body),
+			}).Info("processing inbound message")
 			finished, procErr := p.ProcessInbound(msg.From, body)
 			if procErr != nil {
 				ex.Logger.WithFields(logrus.Fields{
@@ -163,6 +180,17 @@ func runProtocolExchange(ctx context.Context, p KeygenProtocol, ex ProtocolExcha
 			_ = ex.RelayClient.DeleteMessageFromServer(ex.SessionID, ex.LocalPartyID, msg.Hash, p.MessageID())
 			progress = true
 			if finished {
+				finalOutbound, finalDrainErr := p.DrainOutbound(ex.Parties)
+				if len(finalOutbound) > 0 {
+					sendErr := ex.SendFn(p.MessageID(), finalOutbound, ex.SessionID, ex.HexEncryptionKey, ex.LocalPartyID, ex.Parties)
+					if sendErr != nil {
+						ex.Logger.WithFields(logrus.Fields{"protocol": p.Name(), "error": sendErr}).Warn("send final outbound failed")
+					}
+				}
+				if finalDrainErr != nil {
+					ex.Logger.WithFields(logrus.Fields{"protocol": p.Name(), "error": finalDrainErr}).Warn("drain final outbound failed")
+				}
+
 				publicKey := ""
 				pr, resultErr := p.Result()
 				if resultErr == nil {
@@ -179,6 +207,10 @@ func runProtocolExchange(ctx context.Context, p KeygenProtocol, ex ProtocolExcha
 
 		newOutbound, drainErr := p.DrainOutbound(ex.Parties)
 		if len(newOutbound) > 0 {
+			ex.Logger.WithFields(logrus.Fields{
+				"protocol": p.Name(),
+				"outCount": len(newOutbound),
+			}).Info("sending outbound after processing")
 			sendErr := ex.SendFn(p.MessageID(), newOutbound, ex.SessionID, ex.HexEncryptionKey, ex.LocalPartyID, ex.Parties)
 			if sendErr != nil {
 				ex.Logger.WithFields(logrus.Fields{"protocol": p.Name(), "error": sendErr}).Warn("send outbound failed")
