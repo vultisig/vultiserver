@@ -82,22 +82,8 @@ func (t *DKLSTssService) ProcessBatchImport(req types.BatchImportRequest) (*Keyg
 		}
 	}
 
-	completeErr := relayClient.CompleteSession(req.SessionID, req.LocalPartyId)
 	sessionCompleted = true
-	if completeErr != nil {
-		t.logger.WithFields(logrus.Fields{
-			"session": req.SessionID,
-			"error":   completeErr,
-		}).Warn("failed to complete session")
-	}
-
-	_, checkErr := relayClient.CheckCompletedParties(req.SessionID, partiesJoined)
-	if checkErr != nil {
-		t.logger.WithFields(logrus.Fields{
-			"session": req.SessionID,
-			"error":   checkErr,
-		}).Error("Failed to check completed parties")
-	}
+	t.completeAndCheck(relayClient, req.SessionID, req.LocalPartyId, partiesJoined)
 
 	return result, nil
 }

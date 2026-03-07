@@ -121,24 +121,29 @@ func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*Keyge
 		}
 	}
 
-	completeErr := relayClient.CompleteSession(req.SessionID, req.LocalPartyId)
 	sessionCompleted = true
+	t.completeAndCheck(relayClient, req.SessionID, req.LocalPartyId, partiesJoined)
+
+	return result, nil
+}
+
+func (t *DKLSTssService) completeAndCheck(
+	relayClient *relay.Client, sessionID, localPartyID string, partiesJoined []string,
+) {
+	completeErr := relayClient.CompleteSession(sessionID, localPartyID)
 	if completeErr != nil {
 		t.logger.WithFields(logrus.Fields{
-			"session": req.SessionID,
+			"session": sessionID,
 			"error":   completeErr,
 		}).Warn("failed to complete session")
 	}
-
-	_, checkErr := relayClient.CheckCompletedParties(req.SessionID, partiesJoined)
+	_, checkErr := relayClient.CheckCompletedParties(sessionID, partiesJoined)
 	if checkErr != nil {
 		t.logger.WithFields(logrus.Fields{
-			"session": req.SessionID,
+			"session": sessionID,
 			"error":   checkErr,
-		}).Error("Failed to check completed parties")
+		}).Error("failed to check completed parties")
 	}
-
-	return result, nil
 }
 
 func filterNewProtocols(requested []string, vault *vaultType.Vault) []string {

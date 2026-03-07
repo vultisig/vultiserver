@@ -164,7 +164,7 @@ func runProtocolExchange(ctx context.Context, p KeygenProtocol, ex ProtocolExcha
 				"protocol": p.Name(),
 				"from":     msg.From,
 				"bodyLen":  len(body),
-			}).Info("processing inbound message")
+			}).Debug("processing inbound message")
 			finished, procErr := p.ProcessInbound(msg.From, body)
 			if procErr != nil {
 				ex.Logger.WithFields(logrus.Fields{

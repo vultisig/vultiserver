@@ -70,7 +70,6 @@ func (s *Server) StartServer() error {
 	e.Use(s.statsdMiddleware)
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins: []string{"*"},
-		AllowMethods: []string{echo.GET, echo.POST, echo.PUT, echo.DELETE, echo.OPTIONS},
 		AllowHeaders: []string{"*"},
 	}))
 	limiterStore := middleware.NewRateLimiterMemoryStoreWithConfig(
