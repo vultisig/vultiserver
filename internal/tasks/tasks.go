@@ -12,5 +12,6 @@ const (
 	TypeReshareDKLS       = "key:reshareDKLS"
 	TypeMigrate           = "key:migrate"
 	TypeImport            = "key:import"
-	TypeCreateMldsa       = "key:createMldsa"
+	TypeCreateMldsa              = "key:createMldsa"
+	TypeResendVaultShareEmail    = "key:resendVaultShareEmail"
 )
