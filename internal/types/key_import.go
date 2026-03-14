@@ -60,6 +60,7 @@ type BatchImportRequest struct {
 	LocalPartyId       string   `json:"local_party_id"`
 	EncryptionPassword string   `json:"encryption_password"`
 	Email              string   `json:"email"`
+	LibType            LibType  `json:"lib_type"`
 	Protocols          []string `json:"protocols"`
 	Chains             []string `json:"chains"`
 }
@@ -83,10 +84,13 @@ func (req *BatchImportRequest) IsValid() error {
 	if req.EncryptionPassword == "" {
 		return fmt.Errorf("encryption_password is required")
 	}
+	if req.LibType != KeyImport {
+		return fmt.Errorf("lib_type must be KeyImport (2)")
+	}
 	if len(req.Protocols) == 0 {
 		return fmt.Errorf("protocols list is required")
 	}
-	known := map[string]bool{"ecdsa": true, "eddsa": true}
+	known := map[string]bool{"ecdsa": true, "eddsa": true, "frozt": true, "fromt": true}
 	seen := map[string]bool{}
 	for _, p := range req.Protocols {
 		if !known[p] {

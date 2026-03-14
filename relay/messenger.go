@@ -44,7 +44,7 @@ func (m *MessengerImp) Send(from, to, body string) error {
 }
 func (m *MessengerImp) SendWithSeq(from, to, body string, seq int64) error {
 	hash := md5.New()
-	hash.Write([]byte(body))
+	hash.Write([]byte(from + ":" + body))
 	hashStr := hex.EncodeToString(hash.Sum(nil))
 
 	if m.HexEncryptionKey != "" {

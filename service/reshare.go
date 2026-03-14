@@ -2,13 +2,13 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -173,9 +173,11 @@ func (s *WorkerService) Reshare(vault *vaultType.Vault,
 	return s.SaveVaultAndScheduleEmail(newVault, encryptionPassword, email)
 }
 func (s *WorkerService) createVerificationCode(publicKeyECDSA string) (string, error) {
-	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-	code := rnd.Intn(9000) + 1000
-	verificationCode := strconv.Itoa(code)
+	code, err := rand.Int(rand.Reader, big.NewInt(10000))
+	if err != nil {
+		return "", fmt.Errorf("failed to generate verification code: %w", err)
+	}
+	verificationCode := fmt.Sprintf("%04d", code.Int64())
 	key := fmt.Sprintf("verification_code_%s", publicKeyECDSA)
 	// verification code will be valid for 1 hour
 	if err := s.redis.Set(context.Background(), key, verificationCode, time.Hour); err != nil {

@@ -97,7 +97,7 @@ func (req *CreateMldsaRequest) IsValid() error {
 	return nil
 }
 
-var KnownBatchProtocols = map[string]bool{"ecdsa": true, "eddsa": true, "mldsa": true}
+var KnownBatchProtocols = map[string]bool{"ecdsa": true, "eddsa": true, "mldsa": true, "frozt": true, "fromt": true}
 
 type BatchVaultRequest struct {
 	VaultCreateRequest
