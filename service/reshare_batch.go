@@ -89,6 +89,14 @@ func (t *DKLSTssService) ProcessBatchReshare(req types.BatchReshareRequest) (*Ke
 
 	t.runKeygen(protocols, req.SessionID, req.HexEncryptionKey, req.LocalPartyId, partiesJoined)
 
+	completeErr := relayClient.CompleteSession(req.SessionID, req.LocalPartyId)
+	if completeErr != nil {
+		t.logger.WithFields(logrus.Fields{
+			"session": req.SessionID,
+			"error":   completeErr,
+		}).Warn("failed to complete session before check")
+	}
+
 	_, checkErr := relayClient.CheckCompletedParties(req.SessionID, partiesJoined)
 	if checkErr != nil {
 		t.logger.WithFields(logrus.Fields{

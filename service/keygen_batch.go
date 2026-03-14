@@ -101,6 +101,14 @@ func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*Keyge
 		}
 	}
 
+	completeErr := relayClient.CompleteSession(req.SessionID, req.LocalPartyId)
+	if completeErr != nil {
+		t.logger.WithFields(logrus.Fields{
+			"session": req.SessionID,
+			"error":   completeErr,
+		}).Warn("failed to complete session before check")
+	}
+
 	_, checkErr := relayClient.CheckCompletedParties(req.SessionID, partiesJoined)
 	if checkErr != nil {
 		t.logger.WithFields(logrus.Fields{
@@ -169,7 +177,12 @@ func allSkippedResult(requested []string) *KeygenResult {
 }
 
 func hasAnySuccess(result *KeygenResult) bool {
-	return len(result.phaseResults) > 0
+	for _, phase := range result.Phases {
+		if phase.Success {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *DKLSTssService) initProtocols(
@@ -237,11 +250,6 @@ func (t *DKLSTssService) runKeygen(
 	defer cancel()
 
 	relayServer := t.cfg.Relay.Server
-	sendFn := func(msgID string, msgs []OutboundMsg, sid, encKey, localID string, pts []string) error {
-		return encryptAndSendMessages(relayServer, sid, encKey, true, msgID, msgs, localID, pts)
-	}
-	notifyFn := notifyStatusViaRelay(sendFn, sessionID, hexEncryptionKey, localPartyID, parties, t.logger)
-
 	ex := ProtocolExchanger{
 		RelayClient:      relay.NewRelayClient(relayServer),
 		RelayServer:      relayServer,
@@ -250,8 +258,6 @@ func (t *DKLSTssService) runKeygen(
 		LocalPartyID:     localPartyID,
 		Parties:          parties,
 		DecryptFn:        t.decodeDecryptMessage,
-		SendFn:           sendFn,
-		NotifyFn:         notifyFn,
 		Logger:           t.logger,
 	}
 
@@ -260,7 +266,7 @@ func (t *DKLSTssService) runKeygen(
 		wg.Add(1)
 		go func(p KeygenProtocol) {
 			defer wg.Done()
-			runProtocolExchange(ctx, p, ex)
+			ex.RunProtocolExchange(ctx, p)
 		}(p)
 	}
 	wg.Wait()

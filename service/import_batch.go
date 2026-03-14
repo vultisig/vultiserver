@@ -64,9 +64,17 @@ func (t *DKLSTssService) ProcessBatchImport(req types.BatchImportRequest) (*Keyg
 	t.runKeygen(protocols, req.SessionID, req.HexEncryptionKey, req.LocalPartyId, partiesJoined)
 
 	for _, p := range protocols {
-		if p.Name() == "ecdsa" && !p.IsFinished() {
-			return nil, fmt.Errorf("ecdsa import failed — cannot create vault")
+		if !p.IsFinished() {
+			return nil, fmt.Errorf("%s import failed — cannot create vault", p.Name())
 		}
+	}
+
+	completeErr := relayClient.CompleteSession(req.SessionID, req.LocalPartyId)
+	if completeErr != nil {
+		t.logger.WithFields(logrus.Fields{
+			"session": req.SessionID,
+			"error":   completeErr,
+		}).Warn("failed to complete session before check")
 	}
 
 	_, checkErr := relayClient.CheckCompletedParties(req.SessionID, partiesJoined)

@@ -93,15 +93,55 @@ type ProtocolExchanger struct {
 	LocalPartyID     string
 	Parties          []string
 	DecryptFn        func(body string, key string) ([]byte, error)
-	SendFn           func(msgID string, msgs []OutboundMsg, sessionID, hexEncryptionKey, localPartyID string, parties []string) error
-	NotifyFn         func(protocol string, status StatusKind, errMsg, publicKey string)
 	Logger           *logrus.Logger
 }
 
-func runProtocolExchange(ctx context.Context, p KeygenProtocol, ex ProtocolExchanger) {
+func (ex *ProtocolExchanger) Send(msgID string, msgs []OutboundMsg) error {
+	messenger := relay.NewMessenger(ex.RelayServer, ex.SessionID, ex.HexEncryptionKey, true, msgID)
+	for _, msg := range msgs {
+		body := base64.StdEncoding.EncodeToString(msg.Body)
+		if msg.To == "" {
+			for _, peer := range ex.Parties {
+				if peer == ex.LocalPartyID {
+					continue
+				}
+				sendErr := messenger.Send(ex.LocalPartyID, peer, body)
+				if sendErr != nil {
+					return sendErr
+				}
+			}
+		} else {
+			sendErr := messenger.Send(ex.LocalPartyID, msg.To, body)
+			if sendErr != nil {
+				return sendErr
+			}
+		}
+	}
+	return nil
+}
+
+func (ex *ProtocolExchanger) Notify(protocol string, status StatusKind, errMsg, publicKey string) {
+	msg := ProtocolStatus{
+		Protocol:  protocol,
+		Status:    status,
+		Error:     errMsg,
+		PublicKey: publicKey,
+	}
+	body, err := json.Marshal(msg)
+	if err != nil {
+		ex.Logger.WithFields(logrus.Fields{"protocol": protocol, "error": err}).Warn("failed to marshal status")
+		return
+	}
+	sendErr := ex.Send(StatusMessageID, []OutboundMsg{{Body: body}})
+	if sendErr != nil {
+		ex.Logger.WithFields(logrus.Fields{"protocol": protocol, "status": status, "error": sendErr}).Warn("failed to send status notification")
+	}
+}
+
+func (ex *ProtocolExchanger) RunProtocolExchange(ctx context.Context, p KeygenProtocol) {
 	outbound, err := p.DrainOutbound(ex.Parties)
 	if len(outbound) > 0 {
-		sendErr := ex.SendFn(p.MessageID(), outbound, ex.SessionID, ex.HexEncryptionKey, ex.LocalPartyID, ex.Parties)
+		sendErr := ex.Send(p.MessageID(), outbound)
 		if sendErr != nil {
 			ex.Logger.WithFields(logrus.Fields{
 				"protocol": p.Name(),
@@ -122,7 +162,7 @@ func runProtocolExchange(ctx context.Context, p KeygenProtocol, ex ProtocolExcha
 		select {
 		case <-ctx.Done():
 			if !p.IsFinished() && !failedNotified {
-				ex.NotifyFn(p.Name(), StatusTimeout, "", "")
+				ex.Notify(p.Name(), StatusTimeout, "", "")
 			}
 			return
 		default:
@@ -156,7 +196,7 @@ func runProtocolExchange(ctx context.Context, p KeygenProtocol, ex ProtocolExcha
 					"error":    procErr,
 				}).Warn("process inbound failed")
 				if !failedNotified {
-					ex.NotifyFn(p.Name(), StatusFailed, procErr.Error(), "")
+					ex.Notify(p.Name(), StatusFailed, procErr.Error(), "")
 					failedNotified = true
 				}
 			}
@@ -172,14 +212,14 @@ func runProtocolExchange(ctx context.Context, p KeygenProtocol, ex ProtocolExcha
 					"protocol":  p.Name(),
 					"publicKey": publicKey,
 				}).Info("protocol finished")
-				ex.NotifyFn(p.Name(), StatusDone, "", publicKey)
+				ex.Notify(p.Name(), StatusDone, "", publicKey)
 				return
 			}
 		}
 
 		newOutbound, drainErr := p.DrainOutbound(ex.Parties)
 		if len(newOutbound) > 0 {
-			sendErr := ex.SendFn(p.MessageID(), newOutbound, ex.SessionID, ex.HexEncryptionKey, ex.LocalPartyID, ex.Parties)
+			sendErr := ex.Send(p.MessageID(), newOutbound)
 			if sendErr != nil {
 				ex.Logger.WithFields(logrus.Fields{"protocol": p.Name(), "error": sendErr}).Warn("send outbound failed")
 			} else {
@@ -194,57 +234,4 @@ func runProtocolExchange(ctx context.Context, p KeygenProtocol, ex ProtocolExcha
 			time.Sleep(PollInterval)
 		}
 	}
-}
-
-func notifyStatusViaRelay(
-	sendFn func(msgID string, msgs []OutboundMsg, sessionID, hexEncryptionKey, localPartyID string, parties []string) error,
-	sessionID, hexEncryptionKey, localPartyID string,
-	parties []string,
-	logger *logrus.Logger,
-) func(protocol string, status StatusKind, errMsg, publicKey string) {
-	return func(protocol string, status StatusKind, errMsg, publicKey string) {
-		msg := ProtocolStatus{
-			Protocol:  protocol,
-			Status:    status,
-			Error:     errMsg,
-			PublicKey: publicKey,
-		}
-		body, err := json.Marshal(msg)
-		if err != nil {
-			logger.WithFields(logrus.Fields{"protocol": protocol, "error": err}).Warn("failed to marshal status")
-			return
-		}
-		sendErr := sendFn(StatusMessageID, []OutboundMsg{{Body: body}}, sessionID, hexEncryptionKey, localPartyID, parties)
-		if sendErr != nil {
-			logger.WithFields(logrus.Fields{"protocol": protocol, "status": status, "error": sendErr}).Warn("failed to send status notification")
-		}
-	}
-}
-
-func encryptAndSendMessages(
-	relayServer, sessionID, hexEncryptionKey string, encrypt bool, messageID string,
-	messages []OutboundMsg,
-	localPartyID string, parties []string,
-) error {
-	messenger := relay.NewMessenger(relayServer, sessionID, hexEncryptionKey, encrypt, messageID)
-	for _, msg := range messages {
-		body := base64.StdEncoding.EncodeToString(msg.Body)
-		if msg.To == "" {
-			for _, peer := range parties {
-				if peer == localPartyID {
-					continue
-				}
-				sendErr := messenger.Send(localPartyID, peer, body)
-				if sendErr != nil {
-					return sendErr
-				}
-			}
-		} else {
-			sendErr := messenger.Send(localPartyID, msg.To, body)
-			if sendErr != nil {
-				return sendErr
-			}
-		}
-	}
-	return nil
 }
