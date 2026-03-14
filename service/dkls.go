@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -559,19 +558,12 @@ func (t *DKLSTssService) ProcessCreateMldsa(req types.CreateMldsaRequest) error 
 		return fmt.Errorf("failed to get mldsa keyshare: %w", err)
 	}
 
-	mldsaPublicKeyBytes, err := hex.DecodeString(mldsaPublicKey)
-	if err != nil {
-		return fmt.Errorf("failed to decode mldsa public key: %w", err)
-	}
-	sha256Hash := sha256.Sum256(mldsaPublicKeyBytes)
-	mldsaKeyID := hex.EncodeToString(sha256Hash[:])
-
 	vault := proto.Clone(existingVault).(*vaultType.Vault)
 	vault.KeyShares = append(vault.KeyShares, &vaultType.Vault_KeyShare{
-		PublicKey: mldsaKeyID,
+		PublicKey: mldsaPublicKey,
 		Keyshare:  mldsaKeyShare,
 	})
-	vault.PublicKeyMldsa44 = mldsaKeyID
+	vault.PublicKeyMldsa44 = mldsaPublicKey
 
 	return t.backup.SaveVaultAndScheduleEmail(vault, req.EncryptionPassword, req.Email)
 }

@@ -1,15 +1,12 @@
 package api
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
@@ -705,22 +702,17 @@ func (s *Server) ResendVaultEmail(c echo.Context) error {
 		return c.NoContent(http.StatusBadRequest)
 	}
 
-	code, err := s.createVerificationCode(c.Request().Context(), publicKeyECDSA)
-	if err != nil {
-		return fmt.Errorf("failed to create verification code: %w", err)
-	}
-	emailRequest := types.EmailRequest{
+	emailRequest := types.ResendVaultShareEmailRequest{
 		Email:       req.Email,
 		FileName:    common.GetVaultName(vault),
 		FileContent: string(content),
 		VaultName:   vault.Name,
-		Code:        code,
 	}
 	buf, err := json.Marshal(emailRequest)
 	if err != nil {
 		return fmt.Errorf("json.Marshal failed: %w", err)
 	}
-	taskInfo, err := s.client.Enqueue(asynq.NewTask(tasks.TypeEmailVaultBackup, buf),
+	taskInfo, err := s.client.Enqueue(asynq.NewTask(tasks.TypeResendVaultShareEmail, buf),
 		asynq.Retention(10*time.Minute),
 		asynq.Queue(tasks.EMAIL_QUEUE_NAME))
 	if err != nil {
@@ -729,18 +721,6 @@ func (s *Server) ResendVaultEmail(c echo.Context) error {
 	s.logger.Info("Email task enqueued: ", taskInfo.ID)
 	return nil
 }
-func (s *Server) createVerificationCode(ctx context.Context, publicKeyECDSA string) (string, error) {
-	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-	code := rnd.Intn(9000) + 1000
-	verificationCode := strconv.Itoa(code)
-	key := fmt.Sprintf("verification_code_%s", publicKeyECDSA)
-	// verification code will be valid for 1 hour
-	if err := s.redis.Set(ctx, key, verificationCode, time.Hour); err != nil {
-		return "", fmt.Errorf("failed to set cache: %w", err)
-	}
-	return verificationCode, nil
-}
-
 // VerifyCode is a handler to verify the code
 func (s *Server) VerifyCode(c echo.Context) error {
 	publicKeyECDSA := c.Param("publicKeyECDSA")
