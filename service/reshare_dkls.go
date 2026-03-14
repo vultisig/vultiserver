@@ -271,7 +271,7 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 	for {
 		if time.Since(start) > time.Minute*2 {
 			// set isKeygenFinished to true , so the other go routine can be stopped
-			return "", "", TssKeyGenTimeout
+			return "", "", ErrTssKeyGenTimeout
 		}
 		messages, err := relayClient.DownloadMessages(sessionID, localPartyID, "")
 		if err != nil {
@@ -290,7 +290,7 @@ func (t *DKLSTssService) processQcInbound(handle Handle,
 			}
 			// make sure the first party is always the initiate device
 			if len(qcParties) > 2 {
-				if t.processedInitiateDeviceMessage.Load() == false && message.From != qcParties[0] {
+				if !t.processedInitiateDeviceMessage.Load() && message.From != qcParties[0] {
 					t.logger.Info("waiting for message from party 1")
 					continue
 				} else {

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+
 	"sync"
 	"time"
 
@@ -48,16 +49,6 @@ func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*Keyge
 	if err != nil {
 		return nil, fmt.Errorf("failed to register session: %w", err)
 	}
-	defer func() {
-		completeErr := relayClient.CompleteSession(req.SessionID, req.LocalPartyId)
-		if completeErr != nil {
-			t.logger.WithFields(logrus.Fields{
-				"session": req.SessionID,
-				"error":   completeErr,
-			}).Warn("failed to complete session")
-		}
-	}()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -67,10 +58,10 @@ func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*Keyge
 	}
 
 	t.logger.WithFields(logrus.Fields{
-		"sessionID":  req.SessionID,
-		"parties":    partiesJoined,
-		"protocols":  protocolsToRun,
-		"isAppend":   isAppend,
+		"sessionID": req.SessionID,
+		"parties":   partiesJoined,
+		"protocols": protocolsToRun,
+		"isAppend":  isAppend,
 	}).Info("Batch keygen session started")
 
 	setupCtx, setupCancel := context.WithTimeout(context.Background(), time.Minute)
@@ -85,7 +76,7 @@ func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*Keyge
 		return nil, fmt.Errorf("failed to decode setup message: %w", err)
 	}
 
-	protocols, err := t.initProtocols(protocolsToRun, setupMsg, req.LocalPartyId, relayClient, req.SessionID, req.HexEncryptionKey)
+	protocols, err := t.initProtocols(protocolsToRun, setupMsg, req.LocalPartyId, partiesJoined, relayClient, req.SessionID, req.HexEncryptionKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init protocols: %w", err)
 	}
@@ -99,22 +90,6 @@ func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*Keyge
 				return nil, fmt.Errorf("ecdsa keygen failed — cannot create vault")
 			}
 		}
-	}
-
-	completeErr := relayClient.CompleteSession(req.SessionID, req.LocalPartyId)
-	if completeErr != nil {
-		t.logger.WithFields(logrus.Fields{
-			"session": req.SessionID,
-			"error":   completeErr,
-		}).Warn("failed to complete session before check")
-	}
-
-	_, checkErr := relayClient.CheckCompletedParties(req.SessionID, partiesJoined)
-	if checkErr != nil {
-		t.logger.WithFields(logrus.Fields{
-			"session": req.SessionID,
-			"error":   checkErr,
-		}).Error("Failed to check completed parties")
 	}
 
 	result := t.collectResults(protocols, req.Protocols, protocolsToRun)
@@ -134,6 +109,11 @@ func (t *DKLSTssService) ProcessBatchKeygen(req types.BatchVaultRequest) (*Keyge
 			}).Warn("failed to store appended vault, existing vault is intact")
 			return result, fmt.Errorf("vault append storage failed: %w", backupErr)
 		}
+	}
+
+	completeErr := relayClient.CompleteSession(req.SessionID, req.LocalPartyId)
+	if completeErr != nil {
+		t.logger.WithField("error", completeErr).Warn("failed to complete session")
 	}
 
 	return result, nil
@@ -158,6 +138,10 @@ func protocolPublicKey(vault *vaultType.Vault, protocol string) string {
 		return vault.PublicKeyEddsa
 	case "mldsa":
 		return vault.PublicKeyMldsa44
+	case "frozt":
+		return vault.PublicKeyFrozt
+	case "fromt":
+		return vault.PublicKeyFromt
 	default:
 		return ""
 	}
@@ -186,21 +170,36 @@ func hasAnySuccess(result *KeygenResult) bool {
 }
 
 func (t *DKLSTssService) initProtocols(
-	names []string, setupMsg []byte, localPartyID string,
+	names []string, setupMsg []byte, localPartyID string, parties []string,
 	relayClient *relay.Client, sessionID, hexEncryptionKey string,
 ) ([]KeygenProtocol, error) {
 	var protocols []KeygenProtocol
 	for _, name := range names {
 		protocolSetupMsg := setupMsg
-		if name == "mldsa" {
-			mldsaSetup, err := t.fetchProtocolSetupMessage(relayClient, sessionID, hexEncryptionKey, "p-mldsa-setup")
+		switch name {
+		case "mldsa":
+			fetched, err := t.fetchProtocolSetupMessage(relayClient, sessionID, hexEncryptionKey, "p-mldsa-setup")
 			if err != nil {
 				freeProtocols(protocols)
 				return nil, fmt.Errorf("init %s: %w", name, err)
 			}
-			protocolSetupMsg = mldsaSetup
+			protocolSetupMsg = fetched
+		case "frozt":
+			fetched, err := t.fetchProtocolSetupMessage(relayClient, sessionID, hexEncryptionKey, "frozt")
+			if err != nil {
+				freeProtocols(protocols)
+				return nil, fmt.Errorf("init %s: %w", name, err)
+			}
+			protocolSetupMsg = fetched
+		case "fromt":
+			fetched, err := t.fetchProtocolSetupMessage(relayClient, sessionID, hexEncryptionKey, "fromt")
+			if err != nil {
+				freeProtocols(protocols)
+				return nil, fmt.Errorf("init %s: %w", name, err)
+			}
+			protocolSetupMsg = fetched
 		}
-		p, err := t.initProtocol(name, protocolSetupMsg, localPartyID)
+		p, err := t.initProtocol(name, protocolSetupMsg, localPartyID, parties)
 		if err != nil {
 			freeProtocols(protocols)
 			return nil, fmt.Errorf("init %s: %w", name, err)
@@ -222,12 +221,16 @@ func (t *DKLSTssService) fetchProtocolSetupMessage(
 	return t.decodeDecryptMessage(encryptedMsg, hexEncryptionKey)
 }
 
-func (t *DKLSTssService) initProtocol(name string, setupMsg []byte, localPartyID string) (KeygenProtocol, error) {
+func (t *DKLSTssService) initProtocol(name string, setupMsg []byte, localPartyID string, parties []string) (KeygenProtocol, error) {
 	switch name {
 	case "ecdsa":
 		return NewMPCKeygenProtocol("ecdsa", "p-ecdsa", setupMsg, localPartyID, false, false)
 	case "eddsa":
 		return NewMPCKeygenProtocol("eddsa", "p-eddsa", setupMsg, localPartyID, true, false)
+	case "frozt":
+		return NewFroztKeygenProtocol("frozt", "p-frozt", setupMsg, localPartyID, parties)
+	case "fromt":
+		return NewFromtKeygenProtocol("fromt", "p-fromt", setupMsg, localPartyID, parties)
 	case "mldsa":
 		return NewMPCKeygenProtocol("mldsa", "p-mldsa", setupMsg, localPartyID, true, true)
 	default:
@@ -374,6 +377,14 @@ func (t *DKLSTssService) saveVault(
 			vault.PublicKeyEddsa = pr.PublicKey
 		case "mldsa":
 			vault.PublicKeyMldsa44 = pr.PublicKey
+		case "frozt":
+			vault.PublicKeyFrozt = pr.PublicKey
+			if err := setFroztVaultEntries(vault, pr.PublicKey, pr.Keyshare); err != nil {
+				return err
+			}
+		case "fromt":
+			vault.PublicKeyFromt = pr.PublicKey
+			setFromtVaultEntries(vault, pr.PublicKey)
 		}
 	}
 

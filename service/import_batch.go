@@ -28,16 +28,6 @@ func (t *DKLSTssService) ProcessBatchImport(req types.BatchImportRequest) (*Keyg
 	if err != nil {
 		return nil, fmt.Errorf("failed to register session: %w", err)
 	}
-	defer func() {
-		completeErr := relayClient.CompleteSession(req.SessionID, req.LocalPartyId)
-		if completeErr != nil {
-			t.logger.WithFields(logrus.Fields{
-				"session": req.SessionID,
-				"error":   completeErr,
-			}).Warn("failed to complete session")
-		}
-	}()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -69,22 +59,6 @@ func (t *DKLSTssService) ProcessBatchImport(req types.BatchImportRequest) (*Keyg
 		}
 	}
 
-	completeErr := relayClient.CompleteSession(req.SessionID, req.LocalPartyId)
-	if completeErr != nil {
-		t.logger.WithFields(logrus.Fields{
-			"session": req.SessionID,
-			"error":   completeErr,
-		}).Warn("failed to complete session before check")
-	}
-
-	_, checkErr := relayClient.CheckCompletedParties(req.SessionID, partiesJoined)
-	if checkErr != nil {
-		t.logger.WithFields(logrus.Fields{
-			"session": req.SessionID,
-			"error":   checkErr,
-		}).Error("Failed to check completed parties")
-	}
-
 	allNames := make([]string, 0, len(allProtocols))
 	for _, ip := range allProtocols {
 		allNames = append(allNames, ip.name)
@@ -102,6 +76,11 @@ func (t *DKLSTssService) ProcessBatchImport(req types.BatchImportRequest) (*Keyg
 		}
 	}
 
+	completeErr := relayClient.CompleteSession(req.SessionID, req.LocalPartyId)
+	if completeErr != nil {
+		t.logger.WithField("error", completeErr).Warn("failed to complete session")
+	}
+
 	return result, nil
 }
 
@@ -112,6 +91,46 @@ type importProtocolDef struct {
 	isEdDSA   bool
 	isChain   bool
 	chain     string
+}
+
+type storedImportChain struct {
+	resultKey string
+	chain     string
+	isEdDSA   bool
+}
+
+var importChainGroups = map[string][]string{
+	"ETH": {
+		"Ethereum",
+		"Arbitrum",
+		"Avalanche",
+		"Base",
+		"Blast",
+		"BSC",
+		"CronosChain",
+		"Optimism",
+		"Polygon",
+		"Zksync",
+		"Mantle",
+		"Hyperliquid",
+		"Sei",
+	},
+	"ATOM": {
+		"Cosmos",
+		"Osmosis",
+		"Kujira",
+		"Dydx",
+		"Noble",
+		"Akash",
+	},
+	"RUNE": {
+		"THORChain",
+		"MayaChain",
+	},
+	"LUNA": {
+		"Terra",
+		"TerraClassic",
+	},
 }
 
 func importSetupKey(name string) string {
@@ -150,6 +169,27 @@ func buildImportProtocolList(protocols []string, chains []string) []importProtoc
 	return defs
 }
 
+func expandStoredImportChains(chains []string) []storedImportChain {
+	var result []storedImportChain
+
+	for _, chain := range chains {
+		expandedChains, ok := importChainGroups[chain]
+		if !ok {
+			expandedChains = []string{chain}
+		}
+
+		for _, expandedChain := range expandedChains {
+			result = append(result, storedImportChain{
+				resultKey: chain,
+				chain:     expandedChain,
+				isEdDSA:   isEdDSAChain(expandedChain),
+			})
+		}
+	}
+
+	return result
+}
+
 func isEdDSAChain(chain string) bool {
 	return slices.Contains(EddsaChains, chain)
 }
@@ -166,7 +206,12 @@ func (t *DKLSTssService) initImportProtocols(
 			freeProtocols(protocols)
 			return nil, fmt.Errorf("setup for %s: %w", def.name, err)
 		}
-		p, err := NewMPCImportProtocol(def.name, def.messageID, setupMsg, localPartyID, def.isEdDSA)
+		t.logger.WithFields(logrus.Fields{
+			"protocol":   def.name,
+			"setupLen":   len(setupMsg),
+			"localParty": localPartyID,
+		}).Info("setup message decoded for protocol")
+		p, err := t.initImportProtocol(def, setupMsg, localPartyID)
 		if err != nil {
 			freeProtocols(protocols)
 			return nil, fmt.Errorf("init import %s: %w", def.name, err)
@@ -174,6 +219,17 @@ func (t *DKLSTssService) initImportProtocols(
 		protocols = append(protocols, p)
 	}
 	return protocols, nil
+}
+
+func (t *DKLSTssService) initImportProtocol(def importProtocolDef, setupMsg []byte, localPartyID string) (KeygenProtocol, error) {
+	switch def.name {
+	case "frozt":
+		return NewFroztImportProtocol(def.name, def.messageID, setupMsg, localPartyID)
+	case "fromt":
+		return NewFromtImportProtocol(def.name, def.messageID, setupMsg, localPartyID)
+	default:
+		return NewMPCImportProtocol(def.name, def.messageID, setupMsg, localPartyID, def.isEdDSA)
+	}
 }
 
 func (t *DKLSTssService) saveImportedVault(
@@ -193,9 +249,10 @@ func (t *DKLSTssService) saveImportedVault(
 		CreatedAt:      timestamppb.New(time.Now()),
 		HexChainCode:   ecdsaResult.ChainCode,
 		LocalPartyId:   req.LocalPartyId,
-		LibType:        keygen.LibType_LIB_TYPE_KEYIMPORT,
 		ResharePrefix:  "",
 	}
+
+	vault.LibType = keygen.LibType_LIB_TYPE_KEYIMPORT
 
 	for name, pr := range result.phaseResults {
 		vault.KeyShares = append(vault.KeyShares,
@@ -207,23 +264,23 @@ func (t *DKLSTssService) saveImportedVault(
 			vault.HexChainCode = pr.ChainCode
 		case "eddsa":
 			vault.PublicKeyEddsa = pr.PublicKey
+		case "frozt":
+			vault.PublicKeyFrozt = pr.PublicKey
+			if err := setFroztVaultEntries(vault, pr.PublicKey, pr.Keyshare); err != nil {
+				return err
+			}
+		case "fromt":
+			vault.PublicKeyFromt = pr.PublicKey
+			setFromtVaultEntries(vault, pr.PublicKey)
 		}
 	}
 
-	allDefs := buildImportProtocolList(req.Protocols, req.Chains)
-	for _, def := range allDefs {
-		if !def.isChain {
-			continue
-		}
-		pr := result.phaseResults[def.chain]
+	for _, def := range expandStoredImportChains(req.Chains) {
+		pr := result.phaseResults[def.resultKey]
 		if pr == nil {
 			continue
 		}
-		vault.ChainPublicKeys = append(vault.ChainPublicKeys, &vaultType.Vault_ChainPublicKey{
-			Chain:     def.chain,
-			PublicKey: pr.PublicKey,
-			IsEddsa:  def.isEdDSA,
-		})
+		upsertChainPublicKey(vault, def.chain, pr.PublicKey, def.isEdDSA)
 	}
 
 	return t.backup.SaveVaultAndScheduleEmail(vault, req.EncryptionPassword, req.Email)
