@@ -13,5 +13,8 @@ const (
 	TypeMigrate           = "key:migrate"
 	TypeImport            = "key:import"
 	TypeCreateMldsa              = "key:createMldsa"
+	TypeKeygenBatch              = "key:keygenBatch"
+	TypeReshareBatch             = "key:reshareBatch"
+	TypeImportBatch              = "key:importBatch"
 	TypeResendVaultShareEmail    = "key:resendVaultShareEmail"
 )

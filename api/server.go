@@ -81,6 +81,9 @@ func (s *Server) StartServer() error {
 	grp.GET("/get/:publicKeyECDSA", s.GetVault)     // Get Vault Data
 	grp.GET("/exist/:publicKeyECDSA", s.ExistVault) // Check if Vault exists
 	//	grp.DELETE("/delete/:publicKeyECDSA", s.DeleteVault) // Delete Vault Data
+	grp.POST("/batch/keygen", s.CreateVaultBatch)
+	grp.POST("/batch/reshare", s.ReshareVaultBatch)
+	grp.POST("/batch/import", s.ImportVaultBatch)
 	grp.POST("/mldsa", s.CreateMldsaVault)  // Add MLDSA key to existing vault
 	grp.POST("/sign", s.SignMessages)       // Sign messages
 	grp.POST("/resend", s.ResendVaultEmail) // request server to send vault share , code through email again
@@ -174,6 +177,112 @@ func (s *Server) CreateVault(c echo.Context) error {
 		return fmt.Errorf("fail to enqueue task, err: %w", err)
 	}
 	return c.NoContent(http.StatusOK)
+}
+
+func (s *Server) CreateVaultBatch(c echo.Context) error {
+	var req types.BatchVaultRequest
+	bindErr := c.Bind(&req)
+	if bindErr != nil {
+		return fmt.Errorf("fail to parse request, err: %w", bindErr)
+	}
+	validErr := req.IsValid()
+	if validErr != nil {
+		return fmt.Errorf("invalid request, err: %w", validErr)
+	}
+	buf, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("fail to marshal to json, err: %w", err)
+	}
+	metricErr := s.sdClient.Count("vault.create.batch", 1, nil, 1)
+	if metricErr != nil {
+		s.logger.Errorf("fail to count metric, err: %v", metricErr)
+	}
+
+	result, err := s.redis.Get(c.Request().Context(), req.SessionID)
+	if err == nil && result != "" {
+		return c.NoContent(http.StatusOK)
+	}
+
+	setErr := s.redis.Set(c.Request().Context(), req.SessionID, req.SessionID, 8*time.Minute)
+	if setErr != nil {
+		s.logger.Errorf("fail to set session, err: %v", setErr)
+	}
+	_, err = s.client.Enqueue(asynq.NewTask(tasks.TypeKeygenBatch, buf),
+		asynq.MaxRetry(-1),
+		asynq.Timeout(7*time.Minute),
+		asynq.Queue(tasks.QUEUE_NAME))
+	if err != nil {
+		return fmt.Errorf("fail to enqueue task, err: %w", err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (s *Server) ReshareVaultBatch(c echo.Context) error {
+	var req types.BatchReshareRequest
+	bindErr := c.Bind(&req)
+	if bindErr != nil {
+		return fmt.Errorf("fail to parse request, err: %w", bindErr)
+	}
+	validErr := req.IsValid()
+	if validErr != nil {
+		return fmt.Errorf("invalid request, err: %w", validErr)
+	}
+	buf, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("fail to marshal to json, err: %w", err)
+	}
+
+	result, err := s.redis.Get(c.Request().Context(), req.SessionID)
+	if err == nil && result != "" {
+		return c.NoContent(http.StatusOK)
+	}
+
+	setErr := s.redis.Set(c.Request().Context(), req.SessionID, req.SessionID, 8*time.Minute)
+	if setErr != nil {
+		s.logger.Errorf("fail to set session, err: %v", setErr)
+	}
+	_, err = s.client.Enqueue(asynq.NewTask(tasks.TypeReshareBatch, buf),
+		asynq.MaxRetry(-1),
+		asynq.Timeout(7*time.Minute),
+		asynq.Queue(tasks.QUEUE_NAME))
+	if err != nil {
+		return fmt.Errorf("fail to enqueue task, err: %w", err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (s *Server) ImportVaultBatch(c echo.Context) error {
+	var req types.BatchImportRequest
+	bindErr := c.Bind(&req)
+	if bindErr != nil {
+		return fmt.Errorf("fail to parse request, err: %w", bindErr)
+	}
+	validErr := req.IsValid()
+	if validErr != nil {
+		return fmt.Errorf("invalid request, err: %w", validErr)
+	}
+	buf, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("fail to marshal to json, err: %w", err)
+	}
+
+	result, err := s.redis.Get(c.Request().Context(), req.SessionID)
+	if err == nil && result != "" {
+		return c.NoContent(http.StatusOK)
+	}
+
+	setErr := s.redis.Set(c.Request().Context(), req.SessionID, req.SessionID, 8*time.Minute)
+	if setErr != nil {
+		s.logger.Errorf("fail to set session, err: %v", setErr)
+	}
+	_, err = s.client.Enqueue(asynq.NewTask(tasks.TypeImportBatch, buf),
+		asynq.MaxRetry(-1),
+		asynq.Timeout(7*time.Minute),
+		asynq.Queue(tasks.QUEUE_NAME))
+	if err != nil {
+		return fmt.Errorf("fail to enqueue task, err: %w", err)
+	}
+	return c.NoContent(http.StatusNoContent)
 }
 
 // ReshareVault is a handler to reshare a vault

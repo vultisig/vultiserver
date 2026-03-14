@@ -62,6 +62,9 @@ func main() {
 	mux.HandleFunc(tasks.TypeMigrate, workerServce.HandleMigrateDKLS)
 	mux.HandleFunc(tasks.TypeImport, workerServce.HandleImport)
 	mux.HandleFunc(tasks.TypeCreateMldsa, workerServce.HandleCreateMldsa)
+	mux.HandleFunc(tasks.TypeKeygenBatch, workerServce.HandleKeygenBatch)
+	mux.HandleFunc(tasks.TypeReshareBatch, workerServce.HandleReshareBatch)
+	mux.HandleFunc(tasks.TypeImportBatch, workerServce.HandleImportBatch)
 	mux.HandleFunc(tasks.TypeResendVaultShareEmail, workerServce.HandleResendVaultShareEmail)
 	if err := srv.Run(mux); err != nil {
 		panic(fmt.Errorf("could not run server: %w", err))
