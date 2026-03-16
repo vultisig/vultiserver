@@ -363,7 +363,7 @@ func (w *MPCWrapperImp) KeyshareDeriveChildPublicKey(share Handle, derivationPat
 		return nil, fmt.Errorf("not implemented")
 	}
 	if w.isEdDSA {
-		return nil, fmt.Errorf("Not implemented")
+		return nil, fmt.Errorf("not implemented")
 	}
 	return session.DklsKeyshareDeriveChildPublicKey(session.Handle(share), derivationPathStr)
 }
@@ -372,7 +372,7 @@ func (w *MPCWrapperImp) KeyshareToRefreshBytes(share Handle) ([]byte, error) {
 		return nil, fmt.Errorf("not implemented")
 	}
 	if w.isEdDSA {
-		return nil, fmt.Errorf("Not implemented")
+		return nil, fmt.Errorf("not implemented")
 	}
 	return session.DklsKeyshareToRefreshBytes(session.Handle(share))
 }
@@ -381,7 +381,7 @@ func (w *MPCWrapperImp) RefreshShareFromBytes(buf []byte) (Handle, error) {
 		return Handle(0), fmt.Errorf("not implemented")
 	}
 	if w.isEdDSA {
-		return Handle(0), fmt.Errorf("Not implemented")
+		return Handle(0), fmt.Errorf("not implemented")
 	}
 	h, err := session.DklsRefreshShareFromBytes(buf)
 	return Handle(h), err
@@ -392,7 +392,7 @@ func (w *MPCWrapperImp) RefreshShareToBytes(share Handle) ([]byte, error) {
 		return nil, fmt.Errorf("not implemented")
 	}
 	if w.isEdDSA {
-		return nil, fmt.Errorf("Not implemented")
+		return nil, fmt.Errorf("not implemented")
 	}
 	return session.DklsRefreshShareToBytes(session.Handle(share))
 }

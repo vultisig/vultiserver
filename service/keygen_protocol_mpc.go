@@ -17,7 +17,6 @@ type MPCKeygenProtocol struct {
 	handle       Handle
 	wrapper      *MPCWrapperImp
 	finished     bool
-	failed       bool
 	lastErr      error
 	cachedResult *PhaseResult
 	cachedErr    error
@@ -49,8 +48,8 @@ func NewMPCKeygenProtocol(
 }
 
 func (p *MPCKeygenProtocol) Name() string      { return p.name }
-func (p *MPCKeygenProtocol) MessageID() string  { return p.msgID }
-func (p *MPCKeygenProtocol) IsFinished() bool   { return p.finished }
+func (p *MPCKeygenProtocol) MessageID() string { return p.msgID }
+func (p *MPCKeygenProtocol) IsFinished() bool  { return p.finished }
 
 func (p *MPCKeygenProtocol) DrainOutbound(parties []string) ([]OutboundMsg, error) {
 	var msgs []OutboundMsg

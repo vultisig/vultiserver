@@ -2,21 +2,40 @@ package types
 
 import (
 	"errors"
+	"strings"
 )
 
-type KeysignRequest struct {
-	PublicKey        string   `json:"public_key"`         // public key, used to identify the backup file
-	Messages         []string `json:"messages"`           // Messages need to be signed
-	SessionID        string   `json:"session"`            // Session ID , it should be an UUID
-	HexEncryptionKey string   `json:"hex_encryption_key"` // Hex encryption key, used to encrypt the keysign messages
-	DerivePath       string   `json:"derive_path"`        // Derive Path
-	IsECDSA          bool     `json:"is_ecdsa"`           // indicate use ECDSA or EDDSA key to sign the messages
-	VaultPassword    string   `json:"vault_password"`     // password used to decrypt the vault file
-	Chain            string   `json:"chain"`              // blockchain type, e.g., BTC, ETH, etc.
-	Mldsa            bool     `json:"mldsa"`              // indicate use MLDSA key to sign the messages
+type ZcashSaplingNote struct {
+	NoteData    string `json:"note_data"`
+	WitnessData string `json:"witness_data"`
 }
 
-// IsValid checks if the keysign request is valid
+type ZcashSaplingOutput struct {
+	Address string `json:"address"`
+	Amount  uint64 `json:"amount"`
+}
+
+type ZcashSaplingContext struct {
+	Notes   []ZcashSaplingNote   `json:"notes"`
+	Outputs []ZcashSaplingOutput `json:"outputs"`
+	Fee     uint64               `json:"fee"`
+	Alphas  []string             `json:"alphas"`
+	Sighash string               `json:"sighash"`
+}
+
+type KeysignRequest struct {
+	PublicKey        string               `json:"public_key"`
+	Messages         []string             `json:"messages"`
+	SessionID        string               `json:"session"`
+	HexEncryptionKey string               `json:"hex_encryption_key"`
+	DerivePath       string               `json:"derive_path"`
+	IsECDSA          bool                 `json:"is_ecdsa"`
+	VaultPassword    string               `json:"vault_password"`
+	Chain            string               `json:"chain"`
+	Mldsa            bool                 `json:"mldsa"`
+	ZcashSapling     *ZcashSaplingContext `json:"zcash_sapling,omitempty"`
+}
+
 func (r KeysignRequest) IsValid() error {
 	if r.PublicKey == "" {
 		return errors.New("invalid public key ECDSA")
@@ -30,8 +49,18 @@ func (r KeysignRequest) IsValid() error {
 	if r.HexEncryptionKey == "" {
 		return errors.New("invalid hex encryption key")
 	}
-	if r.DerivePath == "" {
+	if r.DerivePath == "" &&
+		!strings.EqualFold(r.Chain, "ZcashSapling") &&
+		!strings.EqualFold(r.Chain, "Monero") {
 		return errors.New("invalid derive path")
+	}
+	if strings.EqualFold(r.Chain, "ZcashSapling") {
+		if r.ZcashSapling == nil {
+			return errors.New("zcash_sapling context is required")
+		}
+		if r.ZcashSapling.Sighash == "" {
+			return errors.New("zcash_sapling sighash is required")
+		}
 	}
 
 	return nil

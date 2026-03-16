@@ -24,7 +24,7 @@ import (
 	"github.com/vultisig/vultiserver/storage"
 )
 
-var TssKeyGenTimeout = errors.New("keygen timeout")
+var ErrTssKeyGenTimeout = errors.New("keygen timeout")
 
 var EddsaChains = []string{
 	"Solana",
@@ -432,7 +432,7 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 	for {
 		if time.Since(start) > (time.Minute * 2) { // 2 minute timeout
 			t.logger.Error("keygen timeout")
-			return "", "", TssKeyGenTimeout
+			return "", "", ErrTssKeyGenTimeout
 		}
 		messages, err := relayClient.DownloadMessages(sessionID, localPartyID, "")
 		if err != nil {
@@ -450,7 +450,7 @@ func (t *DKLSTssService) processKeygenInbound(handle Handle,
 				continue
 			}
 			if len(parties) > 2 {
-				if t.processedInitiateDeviceMessage.Load() == false && message.From != parties[0] {
+				if !t.processedInitiateDeviceMessage.Load() && message.From != parties[0] {
 					t.logger.Info("waiting for message from party 1")
 					continue
 				} else {

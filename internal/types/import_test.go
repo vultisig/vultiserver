@@ -14,6 +14,7 @@ func validBatchImportRequest() BatchImportRequest {
 		LocalPartyId:       "server",
 		EncryptionPassword: "password123",
 		Email:              "test@example.com",
+		LibType:            KeyImport,
 		Protocols:          []string{"ecdsa", "eddsa"},
 		Chains:             []string{"Solana"},
 	}
@@ -78,6 +79,15 @@ func TestBatchImportRequestMissingPassword(t *testing.T) {
 	err := req.IsValid()
 	if err == nil {
 		t.Fatal("expected error for missing encryption_password")
+	}
+}
+
+func TestBatchImportRequestInvalidLibType(t *testing.T) {
+	req := validBatchImportRequest()
+	req.LibType = DKLS
+	err := req.IsValid()
+	if err == nil {
+		t.Fatal("expected error for invalid lib_type")
 	}
 }
 
