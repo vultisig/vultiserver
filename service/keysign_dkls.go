@@ -261,7 +261,7 @@ func (t *DKLSTssService) keysign(sessionID string,
 			t.logger.Error("Signature is invalid")
 		}
 	} else {
-		publicKeyDerivePath := strings.Replace(derivePath, "'", "", -1)
+		publicKeyDerivePath := strings.ReplaceAll(derivePath, "'", "")
 		childPublicKey, err := mpcWrapper.KeyshareDeriveChildPublicKey(keyshareHandle, []byte(publicKeyDerivePath))
 		if err != nil {
 			return nil, fmt.Errorf("failed to derive child public key: %w", err)
@@ -333,7 +333,7 @@ func (t *DKLSTssService) processKeysignInbound(handle Handle,
 	start := time.Now()
 	for {
 		if time.Since(start) > time.Minute {
-			return nil, TssKeyGenTimeout
+			return nil, ErrTssKeyGenTimeout
 		}
 		messages, err := relayClient.DownloadMessages(sessionID, localPartyID, messageID)
 		if err != nil {

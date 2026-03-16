@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
@@ -21,6 +22,7 @@ import (
 	"github.com/vultisig/vultiserver/common"
 	"github.com/vultisig/vultiserver/internal/tasks"
 	"github.com/vultisig/vultiserver/internal/types"
+	"github.com/vultisig/vultiserver/service"
 	"github.com/vultisig/vultiserver/storage"
 )
 
@@ -63,7 +65,10 @@ func (s *Server) StartServer() error {
 	e.Use(middleware.Recover())
 	e.Use(middleware.BodyLimit("2M")) // set maximum allowed size for a request body to 2M
 	e.Use(s.statsdMiddleware)
-	e.Use(middleware.CORS())
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins: []string{"*"},
+		AllowHeaders: []string{"*"},
+	}))
 	limiterStore := middleware.NewRateLimiterMemoryStoreWithConfig(
 		middleware.RateLimiterMemoryStoreConfig{Rate: 5, Burst: 30, ExpiresIn: 5 * time.Minute},
 	)
@@ -76,19 +81,16 @@ func (s *Server) StartServer() error {
 	grp.POST("/reshare", s.ReshareVault)
 	grp.POST("/migrate", s.MigrateVault)
 	grp.POST("/import", s.ImportVault)
-	// grp.POST("/upload", s.UploadVault)
-	// grp.GET("/download/:publicKeyECDSA", s.DownloadVault)
-	grp.GET("/get/:publicKeyECDSA", s.GetVault)     // Get Vault Data
-	grp.GET("/exist/:publicKeyECDSA", s.ExistVault) // Check if Vault exists
-	//	grp.DELETE("/delete/:publicKeyECDSA", s.DeleteVault) // Delete Vault Data
+	grp.GET("/get/:publicKeyECDSA", s.GetVault)
+	grp.GET("/exist/:publicKeyECDSA", s.ExistVault)
 	grp.POST("/batch/keygen", s.CreateVaultBatch)
 	grp.POST("/batch/reshare", s.ReshareVaultBatch)
 	grp.POST("/batch/import", s.ImportVaultBatch)
-	grp.POST("/mldsa", s.CreateMldsaVault)  // Add MLDSA key to existing vault
-	grp.POST("/sign", s.SignMessages)       // Sign messages
-	grp.POST("/resend", s.ResendVaultEmail) // request server to send vault share , code through email again
+	grp.POST("/mldsa", s.CreateMldsaVault)
+	grp.POST("/sign", s.SignMessages)
+	grp.GET("/sign/response/:taskId", s.GetKeysignResult)
+	grp.POST("/resend", s.ResendVaultEmail)
 	grp.GET("/verify/:publicKeyECDSA/:code", s.VerifyCode)
-	// grp.GET("/sign/response/:taskId", s.GetKeysignResult) // Get keysign result
 	return e.Start(fmt.Sprintf(":%d", s.port))
 }
 
@@ -162,7 +164,7 @@ func (s *Server) CreateVault(c echo.Context) error {
 	if err := s.redis.Set(c.Request().Context(), req.SessionID, req.SessionID, 5*time.Minute); err != nil {
 		s.logger.Errorf("fail to set session, err: %v", err)
 	}
-	var typeName = ""
+	var typeName string
 	if req.LibType == types.GG20 {
 		typeName = tasks.TypeKeyGeneration
 	} else {
@@ -209,7 +211,7 @@ func (s *Server) CreateVaultBatch(c echo.Context) error {
 	}
 	_, err = s.client.Enqueue(asynq.NewTask(tasks.TypeKeygenBatch, buf),
 		asynq.MaxRetry(-1),
-		asynq.Timeout(7*time.Minute),
+		asynq.Timeout(service.KeygenTimeout+5*time.Minute),
 		asynq.Queue(tasks.QUEUE_NAME))
 	if err != nil {
 		return fmt.Errorf("fail to enqueue task, err: %w", err)
@@ -243,7 +245,7 @@ func (s *Server) ReshareVaultBatch(c echo.Context) error {
 	}
 	_, err = s.client.Enqueue(asynq.NewTask(tasks.TypeReshareBatch, buf),
 		asynq.MaxRetry(-1),
-		asynq.Timeout(7*time.Minute),
+		asynq.Timeout(service.KeygenTimeout+5*time.Minute),
 		asynq.Queue(tasks.QUEUE_NAME))
 	if err != nil {
 		return fmt.Errorf("fail to enqueue task, err: %w", err)
@@ -306,7 +308,7 @@ func (s *Server) ReshareVault(c echo.Context) error {
 	if err := s.redis.Set(c.Request().Context(), req.SessionID, req.SessionID, 5*time.Minute); err != nil {
 		s.logger.Errorf("fail to set session, err: %v", err)
 	}
-	var typeName = ""
+	var typeName string
 	if req.LibType == types.GG20 {
 		typeName = tasks.TypeReshare
 	} else {
@@ -591,10 +593,15 @@ func (s *Server) SignMessages(c echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("fail to marshal to json, err: %w", err)
 	}
-	var typeName = ""
-	if vault.LibType == keygen.LibType_LIB_TYPE_GG20 {
+	var typeName string
+	switch {
+	case strings.EqualFold(req.Chain, "ZcashSapling"):
+		typeName = tasks.TypeKeySignFrozt
+	case strings.EqualFold(req.Chain, "Monero"):
+		typeName = tasks.TypeKeySignFromt
+	case vault.LibType == keygen.LibType_LIB_TYPE_GG20:
 		typeName = tasks.TypeKeySign
-	} else {
+	default:
 		typeName = tasks.TypeKeySignDKLS
 	}
 	ti, err := s.client.EnqueueContext(c.Request().Context(),
@@ -627,15 +634,14 @@ func (s *Server) GetKeysignResult(c echo.Context) error {
 		return fmt.Errorf("task not found")
 	}
 
-	if task.State == asynq.TaskStatePending {
-		return c.JSON(http.StatusOK, "Task is still in progress")
+	switch task.State {
+	case asynq.TaskStatePending, asynq.TaskStateActive:
+		return c.JSON(http.StatusAccepted, map[string]string{"status": "pending"})
+	case asynq.TaskStateCompleted:
+		return c.Blob(http.StatusOK, "application/json", task.Result)
+	default:
+		return c.JSON(http.StatusInternalServerError, map[string]string{"status": "failed"})
 	}
-
-	if task.State == asynq.TaskStateCompleted {
-		return c.JSON(http.StatusOK, task.Result)
-	}
-
-	return fmt.Errorf("task state is invalid")
 }
 func (s *Server) isValidHash(hash string) bool {
 	if len(hash) != 66 {
@@ -721,6 +727,7 @@ func (s *Server) ResendVaultEmail(c echo.Context) error {
 	s.logger.Info("Email task enqueued: ", taskInfo.ID)
 	return nil
 }
+
 // VerifyCode is a handler to verify the code
 func (s *Server) VerifyCode(c echo.Context) error {
 	publicKeyECDSA := c.Param("publicKeyECDSA")

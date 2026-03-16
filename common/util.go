@@ -229,3 +229,31 @@ func DecryptGCM(rawData []byte, hexEncryptKey string) ([]byte, error) {
 
 	return plaintext, nil
 }
+
+func EncryptGCM(plaintext []byte, hexEncryptKey string) ([]byte, error) {
+	password, err := hex.DecodeString(hexEncryptKey)
+	if err != nil {
+		return nil, err
+	}
+
+	hash := sha256.Sum256([]byte(password))
+	key := hash[:]
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	_, err = io.ReadFull(rand.Reader, nonce)
+	if err != nil {
+		return nil, err
+	}
+
+	return gcm.Seal(nonce, nonce, plaintext, nil), nil
+}
