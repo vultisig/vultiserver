@@ -110,6 +110,7 @@ type importProtocolDef struct {
 	messageID string
 	setupKey  string
 	isEdDSA   bool
+	isMldsa   bool
 	isChain   bool
 	chain     string
 }
@@ -128,6 +129,16 @@ func importSetupKey(name string) string {
 func buildImportProtocolList(protocols []string, chains []string) []importProtocolDef {
 	var defs []importProtocolDef
 	for _, p := range protocols {
+		if p == "mldsa" {
+			defs = append(defs, importProtocolDef{
+				name:      "mldsa",
+				messageID: "p-mldsa",
+				setupKey:  "p-mldsa-setup",
+				isEdDSA:   true,
+				isMldsa:   true,
+			})
+			continue
+		}
 		isEdDSA := p == "eddsa"
 		defs = append(defs, importProtocolDef{
 			name:      p,
@@ -165,6 +176,15 @@ func (t *DKLSTssService) initImportProtocols(
 		if err != nil {
 			freeProtocols(protocols)
 			return nil, fmt.Errorf("setup for %s: %w", def.name, err)
+		}
+		if def.isMldsa {
+			p, kErr := NewMPCKeygenProtocol(def.name, def.messageID, setupMsg, localPartyID, true, true)
+			if kErr != nil {
+				freeProtocols(protocols)
+				return nil, fmt.Errorf("init keygen %s: %w", def.name, kErr)
+			}
+			protocols = append(protocols, p)
+			continue
 		}
 		p, err := NewMPCImportProtocol(def.name, def.messageID, setupMsg, localPartyID, def.isEdDSA)
 		if err != nil {
@@ -207,6 +227,8 @@ func (t *DKLSTssService) saveImportedVault(
 			vault.HexChainCode = pr.ChainCode
 		case "eddsa":
 			vault.PublicKeyEddsa = pr.PublicKey
+		case "mldsa":
+			vault.PublicKeyMldsa44 = pr.PublicKey
 		}
 	}
 
