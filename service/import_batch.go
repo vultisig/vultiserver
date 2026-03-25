@@ -134,7 +134,6 @@ func buildImportProtocolList(protocols []string, chains []string) []importProtoc
 				name:      "mldsa",
 				messageID: "p-mldsa",
 				setupKey:  "p-mldsa-setup",
-				isEdDSA:   true,
 				isMldsa:   true,
 			})
 			continue
