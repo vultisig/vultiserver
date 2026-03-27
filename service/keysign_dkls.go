@@ -237,6 +237,18 @@ func (t *DKLSTssService) keysign(sessionID string,
 	if len(sig) == 0 {
 		return nil, fmt.Errorf("signature is empty")
 	}
+
+	if isMldsa {
+		resp := &tss.KeysignResponse{
+			Msg:          message,
+			R:            hex.EncodeToString(sig),
+			S:            "",
+			DerSignature: hex.EncodeToString(sig),
+		}
+		t.logger.Infoln("MLDSA signature produced successfully")
+		return resp, nil
+	}
+
 	rBytes := sig[:32]
 	sBytes := sig[32:64]
 	derBytes, err := common.GetDerSignature(rBytes, sBytes)

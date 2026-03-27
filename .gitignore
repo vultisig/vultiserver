@@ -10,4 +10,8 @@ config-example.yaml
 *.bak
 config.json
 .trunk/
+.cursor/
+.local-bin/
+tasks/
+tmp_inspect_vault/
 cmd/worker/worker
