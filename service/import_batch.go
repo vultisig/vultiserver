@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/exp/slices"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/vultisig/commondata/go/vultisig/chainutil"
 	keygen "github.com/vultisig/commondata/go/vultisig/keygen/v1"
 	vaultType "github.com/vultisig/commondata/go/vultisig/vault/v1"
 
@@ -126,7 +128,21 @@ func importSetupKey(name string) string {
 	}
 }
 
+func deduplicateByAlias(chains []string) []string {
+	seen := map[string]bool{}
+	var result []string
+	for _, c := range chains {
+		canonical := strings.ToLower(chainutil.ResolveChainAlias(c))
+		if !seen[canonical] {
+			seen[canonical] = true
+			result = append(result, chainutil.ResolveChainAlias(c))
+		}
+	}
+	return result
+}
+
 func buildImportProtocolList(protocols []string, chains []string) []importProtocolDef {
+	chains = deduplicateByAlias(chains)
 	var defs []importProtocolDef
 	for _, p := range protocols {
 		if p == "mldsa" {
@@ -241,7 +257,7 @@ func (t *DKLSTssService) saveImportedVault(
 			continue
 		}
 		vault.ChainPublicKeys = append(vault.ChainPublicKeys, &vaultType.Vault_ChainPublicKey{
-			Chain:     def.chain,
+			Chain:     chainutil.ResolveChainAlias(def.chain),
 			PublicKey: pr.PublicKey,
 			IsEddsa:  def.isEdDSA,
 		})

@@ -16,6 +16,7 @@ import (
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/sirupsen/logrus"
+	"github.com/vultisig/commondata/go/vultisig/chainutil"
 	v1 "github.com/vultisig/commondata/go/vultisig/keygen/v1"
 	mldsaSession "github.com/vultisig/go-wrappers/mldsa"
 	"github.com/vultisig/mobile-tss-lib/tss"
@@ -63,9 +64,10 @@ func (t *DKLSTssService) ProcessDKLSKeysign(req types.KeysignRequest) (map[strin
 	}
 
 	if !req.Mldsa && req.Chain != "" && localStateAccessor.Vault.LibType == v1.LibType_LIB_TYPE_KEYIMPORT {
+		canonicalChain := chainutil.ResolveChainAlias(req.Chain)
 		found := false
 		for _, chainInfo := range localStateAccessor.Vault.ChainPublicKeys {
-			if strings.EqualFold(chainInfo.Chain, req.Chain) {
+			if strings.EqualFold(chainutil.ResolveChainAlias(chainInfo.Chain), canonicalChain) {
 				publicKey = chainInfo.PublicKey
 				found = true
 				break

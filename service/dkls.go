@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/vultisig/commondata/go/vultisig/chainutil"
 	keygen "github.com/vultisig/commondata/go/vultisig/keygen/v1"
 	vaultType "github.com/vultisig/commondata/go/vultisig/vault/v1"
 	mldsaSession "github.com/vultisig/go-wrappers/mldsa"
@@ -199,9 +200,9 @@ func (t *DKLSTssService) ProcessDKLSKeyImport(req types.KeyImportRequest) (strin
 			return "", "", fmt.Errorf("failed to get local state: %w", err)
 		}
 		vault.ChainPublicKeys = append(vault.ChainPublicKeys, &vaultType.Vault_ChainPublicKey{
-			Chain:     chain,
+			Chain:     chainutil.ResolveChainAlias(chain),
 			PublicKey: chainPublicKey,
-			IsEddsa:   isEdDSA,
+			IsEddsa:  isEdDSA,
 		})
 		vault.KeyShares = append(vault.KeyShares, &vaultType.Vault_KeyShare{
 			PublicKey: chainPublicKey,
