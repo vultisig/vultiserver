@@ -228,7 +228,7 @@ func (t *DKLSTssService) ProcessDKLSKeyImport(req types.KeyImportRequest) (strin
 	if t.backup == nil {
 		return publicKeyECDSA, publicKeyEdDSA, nil
 	}
-	if err := t.backup.SaveVaultAndScheduleEmail(vault, req.EncryptionPassword, req.Email); err != nil {
+	if err := t.backup.SaveVaultAndScheduleEmail(vault, req.EncryptionPassword, req.Email, req.ForceOverwrite); err != nil {
 		t.logger.WithFields(logrus.Fields{
 			"name":  req.Name,
 			"email": req.Email,
@@ -565,5 +565,8 @@ func (t *DKLSTssService) ProcessCreateMldsa(req types.CreateMldsaRequest) error 
 	})
 	vault.PublicKeyMldsa44 = mldsaPublicKey
 
-	return t.backup.SaveVaultAndScheduleEmail(vault, req.EncryptionPassword, req.Email)
+	// MLDSA extension always overwrites: it's adding a new key type to an
+	// already-registered vault. The metadata (ecdsa/eddsa/chaincode) is
+	// unchanged — only PublicKeyMldsa44 + the new keyshare are added.
+	return t.backup.SaveVaultAndScheduleEmail(vault, req.EncryptionPassword, req.Email, true)
 }

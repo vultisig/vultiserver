@@ -239,5 +239,6 @@ func (t *DKLSTssService) saveResharedVault(
 		}
 	}
 
-	return t.backup.SaveVaultAndScheduleEmail(vault, req.EncryptionPassword, req.Email)
+	// Batch reshare is always a fresh ceremony that replaces the server share.
+	return t.backup.SaveVaultAndScheduleEmail(vault, req.EncryptionPassword, req.Email, true)
 }

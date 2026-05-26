@@ -163,7 +163,10 @@ func (t *DKLSTssService) ProceeMigration(vault *vaultType.Vault,
 		LibType:       keygenType.LibType_LIB_TYPE_DKLS,
 		ResharePrefix: "",
 	}
-	return t.backup.SaveVaultAndScheduleEmail(newVault, encryptionPassword, email)
+	// GG20-to-DKLS migration always overwrites: this path creates a new DKLS
+	// share for a vault that was previously under GG20. The intent is to
+	// replace the server share entirely.
+	return t.backup.SaveVaultAndScheduleEmail(newVault, encryptionPassword, email, true)
 }
 
 func (t *DKLSTssService) migrateWithRetry(publicKey string,

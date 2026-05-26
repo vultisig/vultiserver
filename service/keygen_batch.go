@@ -377,5 +377,6 @@ func (t *DKLSTssService) saveVault(
 		}
 	}
 
-	return t.backup.SaveVaultAndScheduleEmail(vault, req.EncryptionPassword, req.Email)
+	// Batch keygen is always a fresh ceremony that replaces the server share.
+	return t.backup.SaveVaultAndScheduleEmail(vault, req.EncryptionPassword, req.Email, true)
 }

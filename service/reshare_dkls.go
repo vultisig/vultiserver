@@ -120,7 +120,9 @@ func (t *DKLSTssService) ProcessReshare(vault *vaultType.Vault,
 		LibType:       keygenType.LibType_LIB_TYPE_DKLS,
 		ResharePrefix: "",
 	}
-	return t.backup.SaveVaultAndScheduleEmail(newVault, encryptionPassword, email)
+	// Reshare always overwrites: the intent of a reshare is to replace the
+	// server share with a freshly-generated one from the ceremony.
+	return t.backup.SaveVaultAndScheduleEmail(newVault, encryptionPassword, email, true)
 }
 func (t *DKLSTssService) reshareWithRetry(vault *vaultType.Vault,
 	sessionID string,

@@ -170,7 +170,8 @@ func (s *WorkerService) Reshare(vault *vaultType.Vault,
 		LibType:       keygenType.LibType_LIB_TYPE_GG20,
 		ResharePrefix: newResharePrefix,
 	}
-	return s.SaveVaultAndScheduleEmail(newVault, encryptionPassword, email)
+	// GG20 reshare always overwrites — same reasoning as the DKLS reshare path.
+	return s.SaveVaultAndScheduleEmail(newVault, encryptionPassword, email, true)
 }
 func (s *WorkerService) createVerificationCode(publicKeyECDSA string) (string, error) {
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -185,7 +186,30 @@ func (s *WorkerService) createVerificationCode(publicKeyECDSA string) (string, e
 }
 func (s *WorkerService) SaveVaultAndScheduleEmail(vault *vaultType.Vault,
 	encryptionPassword string,
-	email string) error {
+	email string,
+	forceOverwrite bool) error {
+	// Collision guard (spike item C): if a vault already exists for this ECDSA
+	// pubkey and its metadata differs, reject the overwrite unless the caller
+	// explicitly requests force. This prevents the server from silently
+	// replacing a live share while devices that hold the prior share still
+	// rely on it for signing.
+	//
+	// The check compares EdDSA pubkey, chain code, and local_party_id — the
+	// three fields that, if they drift, cause the share-mismatch pathology.
+	// An identical re-write (same metadata, same password) is always allowed.
+	//
+	// NOTE: we use the INCOMING encryption password to try to decrypt the
+	// existing file. If the password has changed (the user re-imported with a
+	// different password), decryption will fail and we conservatively allow
+	// the overwrite (we can't verify the existing metadata, so we can't block
+	// it). This mirrors the current permissive behaviour for password changes
+	// and avoids locking users out of a legitimate re-import.
+	if !forceOverwrite {
+		if err := s.checkVaultCollision(vault, encryptionPassword); err != nil {
+			return err
+		}
+	}
+
 	vaultData, err := proto.Marshal(vault)
 	if err != nil {
 		return fmt.Errorf("failed to Marshal vault: %w", err)
@@ -239,6 +263,66 @@ func (s *WorkerService) SaveVaultAndScheduleEmail(vault *vaultType.Vault,
 	s.logger.Info("Email task enqueued: ", taskInfo.ID)
 	return nil
 }
+// checkVaultCollision reads the existing vault file for the given ECDSA pubkey
+// (if any) and returns ErrVaultCollision when the existing vault has different
+// EdDSA pubkey, chain code, or local_party_id than the incoming vault.
+//
+// Returns nil when:
+//   - no existing vault (new registration — always allowed)
+//   - existing vault is identical to the incoming one (idempotent re-write)
+//   - existing vault file cannot be decrypted with the provided password (e.g.
+//     password changed — we conservatively allow the overwrite since we can't
+//     verify the existing metadata)
+func (s *WorkerService) checkVaultCollision(incoming *vaultType.Vault, password string) error {
+	filePathName := incoming.PublicKeyEcdsa + ".bak"
+	existing, err := s.blockStorage.GetFile(filePathName)
+	if err != nil {
+		// File does not exist — first registration, no collision possible.
+		return nil
+	}
+	return detectVaultCollision(incoming, password, existing, s.logger)
+}
+
+// detectVaultCollision is the pure core of checkVaultCollision, extracted so
+// it can be tested without a real BlockStorage.
+func detectVaultCollision(incoming *vaultType.Vault, password string, existingFileData []byte, logger *logrus.Logger) error {
+	existingVault, err := common.DecryptVaultFromBackup(password, existingFileData)
+	if err != nil {
+		// Can't decrypt — different password or corrupt file.
+		// Conservatively allow: we can't verify whether it collides.
+		if logger != nil {
+			logger.WithField("pubkey", incoming.PublicKeyEcdsa).
+				Warn("checkVaultCollision: failed to decrypt existing vault; allowing overwrite")
+		}
+		return nil
+	}
+
+	// Exact same metadata → idempotent re-write, always allow.
+	if existingVault.PublicKeyEddsa == incoming.PublicKeyEddsa &&
+		existingVault.HexChainCode == incoming.HexChainCode &&
+		existingVault.LocalPartyId == incoming.LocalPartyId {
+		return nil
+	}
+
+	if logger != nil {
+		logger.WithFields(logrus.Fields{
+			"pubkey":             incoming.PublicKeyEcdsa,
+			"existing_eddsa":     existingVault.PublicKeyEddsa,
+			"incoming_eddsa":     incoming.PublicKeyEddsa,
+			"existing_chaincode": existingVault.HexChainCode,
+			"incoming_chaincode": incoming.HexChainCode,
+			"existing_partyid":   existingVault.LocalPartyId,
+			"incoming_partyid":   incoming.LocalPartyId,
+		}).Warn("checkVaultCollision: vault metadata mismatch, rejecting overwrite (use ?force=true to override)")
+	}
+
+	return fmt.Errorf("%w (existing_eddsa=%s incoming_eddsa=%s)",
+		ErrVaultCollision,
+		existingVault.PublicKeyEddsa,
+		incoming.PublicKeyEddsa,
+	)
+}
+
 func getOldParties(newParties []string, oldSignerCommittee []string) []string {
 	oldParties := make([]string, 0)
 	for _, party := range oldSignerCommittee {

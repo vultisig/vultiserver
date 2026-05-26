@@ -16,6 +16,11 @@ type KeyImportRequest struct {
 	EncryptionPassword string   `json:"encryption_password" validate:"required"` // password used to encrypt the vault file
 	Email              string   `json:"email" validate:"required"`               // this is the email of the user that the vault backup will be sent to
 	Chains             []string `json:"chains" validate:"required"`              // chains to import the key for
+	// ForceOverwrite allows overwriting an existing vault share for the same
+	// root ECDSA pubkey when the import produces different metadata.
+	// Without this flag the worker will reject the overwrite (ErrVaultCollision).
+	// Set via the ?force=true query param on POST /vault/import.
+	ForceOverwrite bool `json:"force_overwrite"`
 }
 
 func (req *KeyImportRequest) IsValid() error {

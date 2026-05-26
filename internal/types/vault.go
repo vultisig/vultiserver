@@ -25,6 +25,14 @@ type VaultCreateRequest struct {
 	EncryptionPassword string  `json:"encryption_password" validate:"required"` // password used to encrypt the vault file
 	Email              string  `json:"email" validate:"required"`               // this is the email of the user that the vault backup will be sent to
 	LibType            LibType `json:"lib_type"`                                // this is the type of the vault
+	// ForceOverwrite allows overwriting an existing vault share for the same
+	// root ECDSA pubkey when the new keygen produces different metadata.
+	// Without this flag the worker will reject the overwrite (ErrVaultCollision)
+	// to prevent silent share-mismatch for devices holding the prior share.
+	// Clients that have confirmed the user wants to replace the server backup
+	// (e.g. after showing a "Your existing vault share will be replaced" prompt)
+	// should set this to true. Set via the ?force=true query param on POST /vault/create.
+	ForceOverwrite bool `json:"force_overwrite"`
 }
 
 func isValidHexString(s string) bool {

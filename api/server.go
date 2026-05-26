@@ -146,6 +146,12 @@ func (s *Server) CreateVault(c echo.Context) error {
 	if err := req.IsValid(); err != nil {
 		return fmt.Errorf("invalid request, err: %w", err)
 	}
+	// ?force=true allows overwriting an existing vault share for the same root
+	// ECDSA pubkey. Without it the worker rejects the overwrite to prevent
+	// silent share-mismatch for devices holding the prior share (spike item C).
+	if c.QueryParam("force") == "true" {
+		req.ForceOverwrite = true
+	}
 	buf, err := json.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("fail to marshal to json, err: %w", err)
@@ -362,6 +368,11 @@ func (s *Server) ImportVault(c echo.Context) error {
 	}
 	if err := req.IsValid(); err != nil {
 		return fmt.Errorf("invalid request, err: %w", err)
+	}
+	// ?force=true allows overwriting an existing vault share for the same root
+	// ECDSA pubkey. Without it the worker rejects the overwrite (spike item C).
+	if c.QueryParam("force") == "true" {
+		req.ForceOverwrite = true
 	}
 	buf, err := json.Marshal(req)
 	if err != nil {

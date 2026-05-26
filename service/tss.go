@@ -24,9 +24,26 @@ import (
 	vaultType "github.com/vultisig/commondata/go/vultisig/vault/v1"
 )
 
+// ErrVaultCollision is returned by SaveVaultAndScheduleEmail when a vault with
+// the same root ECDSA pubkey already exists on the server but its metadata
+// (EdDSA pubkey, chain code, or server party-id) differs from the incoming
+// vault. The caller must either use forceOverwrite=true or surface the
+// collision to the user so they can make an informed decision.
+//
+// This prevents silent share-mismatch: devices holding the prior share would
+// lose the ability to sign after the server backup is overwritten by a
+// re-keygen or re-import from another device (spike item C).
+var ErrVaultCollision = errors.New("vault_collision: a vault with this pubkey already exists with different metadata; use ?force=true to overwrite")
+
 type VaultOperation interface {
 	BackupVault(req types.VaultCreateRequest, partiesJoined []string, ecdsaPubkey, eddsaPubkey, hexChainCode string, localStateAccessor *relay.LocalStateAccessorImp) error
-	SaveVaultAndScheduleEmail(vault *vaultType.Vault, encryptionPassword, email string) error
+	// SaveVaultAndScheduleEmail writes the vault to block storage and enqueues
+	// the backup email. When forceOverwrite is false and a vault already exists
+	// for vault.PublicKeyEcdsa with different EdDSA pubkey, chain code, or
+	// local_party_id, returns ErrVaultCollision without overwriting the existing
+	// share. Pass forceOverwrite=true only when the user has explicitly
+	// consented to replacing the server backup (e.g. reimport via ?force=true).
+	SaveVaultAndScheduleEmail(vault *vaultType.Vault, encryptionPassword, email string, forceOverwrite bool) error
 }
 
 func (s *WorkerService) JoinKeyGeneration(req types.VaultCreateRequest) (string, string, error) {
@@ -205,7 +222,7 @@ func (s *WorkerService) BackupVault(req types.VaultCreateRequest,
 	default:
 		return fmt.Errorf("invalid lib type for vault: %d", req.LibType)
 	}
-	return s.SaveVaultAndScheduleEmail(vault, req.EncryptionPassword, req.Email)
+	return s.SaveVaultAndScheduleEmail(vault, req.EncryptionPassword, req.Email, req.ForceOverwrite)
 }
 
 func (s *WorkerService) createTSSService(serverURL, Session, HexEncryptionKey string, localStateAccessor tss.LocalStateAccessor, createPreParam bool, messageID string) (*tss.ServiceImpl, error) {
