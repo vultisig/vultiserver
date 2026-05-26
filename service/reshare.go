@@ -286,6 +286,10 @@ func (s *WorkerService) checkVaultCollision(incoming *vaultType.Vault, password 
 // detectVaultCollision is the pure core of checkVaultCollision, extracted so
 // it can be tested without a real BlockStorage.
 func detectVaultCollision(incoming *vaultType.Vault, password string, existingFileData []byte, logger *logrus.Logger) error {
+	if len(existingFileData) == 0 {
+		// No existing file data — first registration, no collision possible.
+		return nil
+	}
 	existingVault, err := common.DecryptVaultFromBackup(password, existingFileData)
 	if err != nil {
 		// Can't decrypt — different password or corrupt file.
