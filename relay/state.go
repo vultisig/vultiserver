@@ -39,6 +39,16 @@ func NewLocalStateAccessorImp(folder, vaultFileName, vaultPasswd string,
 		if err != nil {
 			return nil, fmt.Errorf("fail to get vault file: %w", err)
 		}
+
+		// Opportunistically re-encrypt legacy (SHA-256) blobs to v2 (PBKDF2).
+		if upgradedBuf, wasUpgraded, upgradeErr := common.UpgradeVaultContainerIfLegacy(vaultPasswd, buf); upgradeErr == nil && wasUpgraded {
+			if writeErr := storage.UploadFile(upgradedBuf, vaultFileName+".bak"); writeErr == nil {
+				buf = upgradedBuf
+			}
+			// If the write-back fails we still proceed with the (already decrypted)
+			// original bytes — the upgrade will be retried on the next read.
+		}
+
 		localStateAccessor.Vault, err = common.DecryptVaultFromBackup(vaultPasswd, buf)
 		if err != nil {
 			return nil, fmt.Errorf("fail to decrypt vault from the backup, err: %w", err)
