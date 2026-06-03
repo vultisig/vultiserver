@@ -29,6 +29,7 @@ var TssKeyGenTimeout = errors.New("keygen timeout")
 var EddsaChains = []string{
 	"Solana",
 	"Polkadot",
+	"Bittensor",
 	"Sui",
 	"Cardano",
 	"Ton",

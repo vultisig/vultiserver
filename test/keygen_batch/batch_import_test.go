@@ -14,7 +14,7 @@ type importProtocolDef struct {
 	chain     string
 }
 
-var eddsaChains = []string{"Solana", "Polkadot", "Sui", "Cardano", "Ton"}
+var eddsaChains = []string{"Solana", "Polkadot", "Bittensor", "Sui", "Cardano", "Ton"}
 
 func importSetupKey(name string) string {
 	switch name {
@@ -107,6 +107,7 @@ func TestBuildImportProtocolListEdDSAChainClassification(t *testing.T) {
 	}{
 		{"Solana", true},
 		{"Polkadot", true},
+		{"Bittensor", true},
 		{"Sui", true},
 		{"Cardano", true},
 		{"Ton", true},
