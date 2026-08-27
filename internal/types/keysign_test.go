@@ -26,3 +26,20 @@ func TestKeysignRequestEmptySession(t *testing.T) {
 		t.Fatal("expected error for empty session id")
 	}
 }
+
+func TestKeysignRequestReservedSessionPrefix(t *testing.T) {
+	// Regression: a session id crafted to look like one of our own redis keys
+	// must be rejected, otherwise it could collide with that key (e.g. the DKLS
+	// vault blacklist) in the shared redis keyspace.
+	for _, sessionID := range []string{
+		"dkls:vault:blacklist:02aabbcc",
+		"resend_02aabbcc",
+		"verification_code_02aabbcc",
+	} {
+		req := validKeysignRequest()
+		req.SessionID = sessionID
+		if err := req.IsValid(); err == nil {
+			t.Fatalf("expected error for reserved session id %q", sessionID)
+		}
+	}
+}

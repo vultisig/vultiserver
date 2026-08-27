@@ -2,6 +2,8 @@ package types
 
 import (
 	"errors"
+
+	"github.com/vultisig/vultiserver/common"
 )
 
 type KeysignRequest struct {
@@ -24,7 +26,7 @@ func (r KeysignRequest) IsValid() error {
 	if len(r.Messages) == 0 {
 		return errors.New("invalid messages")
 	}
-	if r.SessionID == "" {
+	if r.SessionID == "" || common.IsReservedRedisKeyPrefix(r.SessionID) {
 		return errors.New("invalid session")
 	}
 	if r.HexEncryptionKey == "" {
