@@ -6,6 +6,7 @@ import (
 
 type KeysignRequest struct {
 	PublicKey        string   `json:"public_key"`         // public key, used to identify the backup file
+	PartyID          string   `json:"party_id"`           // initiator/request party id (used for DKLS blacklist)
 	Messages         []string `json:"messages"`           // Messages need to be signed
 	SessionID        string   `json:"session"`            // Session ID , it should be an UUID
 	HexEncryptionKey string   `json:"hex_encryption_key"` // Hex encryption key, used to encrypt the keysign messages

@@ -40,6 +40,7 @@ type DKLSTssService struct {
 	logger                         *logrus.Logger
 	localStateAccessor             *relay.LocalStateAccessorImp
 	blockStorage                   *storage.BlockStorage
+	redis                          *storage.RedisStorage
 	backup                         VaultOperation
 	counter                        int64
 	processedInitiateDeviceMessage *atomic.Bool
@@ -48,12 +49,14 @@ type DKLSTssService struct {
 func NewDKLSTssService(cfg config.Config,
 	blockStorage *storage.BlockStorage,
 	localStateAccessor *relay.LocalStateAccessorImp,
-	backupInterface VaultOperation) (*DKLSTssService, error) {
+	backupInterface VaultOperation,
+	redis *storage.RedisStorage) (*DKLSTssService, error) {
 	return &DKLSTssService{
 		cfg:                            cfg,
 		logger:                         logrus.WithField("service", "dkls").Logger,
 		blockStorage:                   blockStorage,
 		localStateAccessor:             localStateAccessor,
+		redis:                          redis,
 		backup:                         backupInterface,
 		processedInitiateDeviceMessage: &atomic.Bool{},
 	}, nil

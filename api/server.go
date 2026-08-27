@@ -568,6 +568,14 @@ func (s *Server) SignMessages(c echo.Context) error {
 	if !s.isValidHash(req.PublicKey) {
 		return c.NoContent(http.StatusBadRequest)
 	}
+	// DKLS party blacklist check: if the request party is blacklisted for this vault, reject early.
+	if req.PartyID != "" {
+		key := common.DKLSPartyBlacklistKey(req.PublicKey, req.PartyID)
+		result, err := s.redis.Get(c.Request().Context(), key)
+		if err == nil && result != "" {
+			return c.NoContent(http.StatusForbidden)
+		}
+	}
 	result, err := s.redis.Get(c.Request().Context(), req.SessionID)
 	if err == nil && result != "" {
 		return c.NoContent(http.StatusOK)
@@ -721,6 +729,7 @@ func (s *Server) ResendVaultEmail(c echo.Context) error {
 	s.logger.Info("Email task enqueued: ", taskInfo.ID)
 	return nil
 }
+
 // VerifyCode is a handler to verify the code
 func (s *Server) VerifyCode(c echo.Context) error {
 	publicKeyECDSA := c.Param("publicKeyECDSA")

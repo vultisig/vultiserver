@@ -40,7 +40,7 @@ func (s *WorkerService) HandleKeyGenerationDKLS(ctx context.Context, t *asynq.Ta
 	if err != nil {
 		return fmt.Errorf("relay.NewLocalStateAccessorImp failed: %s: %w", err, asynq.SkipRetry)
 	}
-	dklsService, err := NewDKLSTssService(s.cfg, s.blockStorage, localStateAccessor, s)
+	dklsService, err := NewDKLSTssService(s.cfg, s.blockStorage, localStateAccessor, s, s.redis)
 	if err != nil {
 		return fmt.Errorf("NewDKLSTssService failed: %s: %w", err, asynq.SkipRetry)
 	}
@@ -98,7 +98,7 @@ func (s *WorkerService) HandleKeySignDKLS(ctx context.Context, t *asynq.Task) er
 	if err != nil {
 		return fmt.Errorf("relay.NewLocalStateAccessorImp failed: %s: %w", err, asynq.SkipRetry)
 	}
-	dklsService, err := NewDKLSTssService(s.cfg, s.blockStorage, localStateAccessor, s)
+	dklsService, err := NewDKLSTssService(s.cfg, s.blockStorage, localStateAccessor, s, s.redis)
 	if err != nil {
 		return fmt.Errorf("NewDKLSTssService failed: %s: %w", err, asynq.SkipRetry)
 	}
@@ -149,7 +149,7 @@ func (s *WorkerService) HandleCreateMldsa(ctx context.Context, t *asynq.Task) er
 	if err != nil {
 		return fmt.Errorf("relay.NewLocalStateAccessorImp failed: %s: %w", err, asynq.SkipRetry)
 	}
-	dklsService, err := NewDKLSTssService(s.cfg, s.blockStorage, localStateAccessor, s)
+	dklsService, err := NewDKLSTssService(s.cfg, s.blockStorage, localStateAccessor, s, s.redis)
 	if err != nil {
 		return fmt.Errorf("NewDKLSTssService failed: %s: %w", err, asynq.SkipRetry)
 	}
@@ -187,7 +187,7 @@ func (s *WorkerService) HandleKeygenBatch(ctx context.Context, t *asynq.Task) er
 	if err != nil {
 		return fmt.Errorf("relay.NewLocalStateAccessorImp failed: %s: %w", err, asynq.SkipRetry)
 	}
-	dklsService, err := NewDKLSTssService(s.cfg, s.blockStorage, localStateAccessor, s)
+	dklsService, err := NewDKLSTssService(s.cfg, s.blockStorage, localStateAccessor, s, s.redis)
 	if err != nil {
 		return fmt.Errorf("NewDKLSTssService failed: %s: %w", err, asynq.SkipRetry)
 	}
@@ -231,7 +231,7 @@ func (s *WorkerService) HandleReshareBatch(ctx context.Context, t *asynq.Task) e
 	if err != nil {
 		return fmt.Errorf("relay.NewLocalStateAccessorImp failed: %s: %w", err, asynq.SkipRetry)
 	}
-	dklsService, err := NewDKLSTssService(s.cfg, s.blockStorage, localStateAccessor, s)
+	dklsService, err := NewDKLSTssService(s.cfg, s.blockStorage, localStateAccessor, s, s.redis)
 	if err != nil {
 		return fmt.Errorf("NewDKLSTssService failed: %s: %w", err, asynq.SkipRetry)
 	}
@@ -274,7 +274,7 @@ func (s *WorkerService) HandleImportBatch(ctx context.Context, t *asynq.Task) er
 	if err != nil {
 		return fmt.Errorf("relay.NewLocalStateAccessorImp failed: %s: %w", err, asynq.SkipRetry)
 	}
-	dklsService, err := NewDKLSTssService(s.cfg, s.blockStorage, localStateAccessor, s)
+	dklsService, err := NewDKLSTssService(s.cfg, s.blockStorage, localStateAccessor, s, s.redis)
 	if err != nil {
 		return fmt.Errorf("NewDKLSTssService failed: %s: %w", err, asynq.SkipRetry)
 	}
@@ -316,7 +316,7 @@ func (s *WorkerService) HandleImport(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("relay.NewLocalStateAccessorImp failed: %s: %w", err, asynq.SkipRetry)
 	}
-	dklsService, err := NewDKLSTssService(s.cfg, s.blockStorage, localStateAccessor, s)
+	dklsService, err := NewDKLSTssService(s.cfg, s.blockStorage, localStateAccessor, s, s.redis)
 	if err != nil {
 		return fmt.Errorf("NewDKLSTssService failed: %s: %w", err, asynq.SkipRetry)
 	}
