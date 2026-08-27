@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/labstack/gommon/log"
+	goredis "github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	keygen "github.com/vultisig/commondata/go/vultisig/keygen/v1"
 	"github.com/vultisig/mobile-tss-lib/tss"
@@ -569,9 +571,16 @@ func (s *Server) SignMessages(c echo.Context) error {
 		return c.NoContent(http.StatusBadRequest)
 	}
 	// DKLS vault blacklist check: reject keysign for blacklisted vaults.
+	// Fail closed on lookup errors (anything other than "key not found") so a Redis
+	// outage cannot silently let a banned vault keep signing.
 	key := common.DKLSVaultBlacklistKey(req.PublicKey)
-	if result, err := s.redis.Get(c.Request().Context(), key); err == nil && result != "" {
-		return c.NoContent(http.StatusForbidden)
+	if result, err := s.redis.Get(c.Request().Context(), key); err == nil {
+		if result != "" {
+			return c.NoContent(http.StatusForbidden)
+		}
+	} else if !errors.Is(err, goredis.Nil) {
+		s.logger.Errorf("fail to check dkls vault blacklist, err: %v", err)
+		return c.NoContent(http.StatusServiceUnavailable)
 	}
 	result, err := s.redis.Get(c.Request().Context(), req.SessionID)
 	if err == nil && result != "" {

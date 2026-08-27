@@ -5,7 +5,8 @@ package common
 // Per current server constraints (2/2 vault), blacklisting a single party effectively means
 // blacklisting the whole vault.
 //
-// Format (as requested): {publicKeyEcdsa}
+// Namespaced so it can never collide with session keys, which are stored under their raw
+// (client-supplied) value elsewhere in the server.
 func DKLSVaultBlacklistKey(publicKeyEcdsa string) string {
-	return publicKeyEcdsa
+	return "dkls:vault:blacklist:" + publicKeyEcdsa
 }
