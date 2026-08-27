@@ -1,10 +1,11 @@
 package common
 
-import "fmt"
-
-// DKLSPartyBlacklistKey returns the redis key used to blacklist a DKLS party for a given vault.
+// DKLSVaultBlacklistKey returns the redis key used to blacklist a vault for DKLS keysign.
 //
-// Format (as requested): {publicKeyEcdsa}-party_{partyID}
-func DKLSPartyBlacklistKey(publicKeyEcdsa, partyID string) string {
-	return fmt.Sprintf("%s-party_%s", publicKeyEcdsa, partyID)
+// Per current server constraints (2/2 vault), blacklisting a single party effectively means
+// blacklisting the whole vault.
+//
+// Format (as requested): {publicKeyEcdsa}
+func DKLSVaultBlacklistKey(publicKeyEcdsa string) string {
+	return publicKeyEcdsa
 }

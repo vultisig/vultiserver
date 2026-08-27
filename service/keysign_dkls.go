@@ -31,15 +31,11 @@ import (
 var dklsAbortAndBanPartyRE = regexp.MustCompile(`LIB_ABORT_PROTOCOL_AND_BAN_PARTY_(\d+)`)
 
 type abortAndBanPartyError struct {
-	PartyID    string
 	PartyIndex int
 	Cause      error
 }
 
 func (e *abortAndBanPartyError) Error() string {
-	if e.PartyID != "" {
-		return fmt.Sprintf("dkls abort protocol and ban party: party_id=%s (idx=%d): %v", e.PartyID, e.PartyIndex, e.Cause)
-	}
 	return fmt.Sprintf("dkls abort protocol and ban party: idx=%d: %v", e.PartyIndex, e.Cause)
 }
 
@@ -420,14 +416,9 @@ func (t *DKLSTssService) processKeysignInbound(handle Handle,
 			isFinished, err := mpcWrapper.SignSessionInputMessage(handle, rawBody)
 			if err != nil {
 				if partyIndex, ok := parseDklsAbortAndBanParty(err); ok {
-					partyID := message.From
-					// If the library gave us a party index, try mapping it to our committee list.
-					if partyIndex > 0 && (partyIndex-1) < len(keysignCommittee) {
-						partyID = keysignCommittee[partyIndex-1]
-					}
 					// Best-effort blacklist in redis.
-					t.blacklistDklsParty(vaultPublicKeyEcdsa, partyID, err)
-					return nil, &abortAndBanPartyError{PartyID: partyID, PartyIndex: partyIndex, Cause: err}
+					t.blacklistDKLSVault(vaultPublicKeyEcdsa, err)
+					return nil, &abortAndBanPartyError{PartyIndex: partyIndex, Cause: err}
 				}
 				t.logger.Error("fail to apply input message", "error", err)
 				continue
@@ -457,32 +448,30 @@ func (t *DKLSTssService) processKeysignInbound(handle Handle,
 
 }
 
-func (t *DKLSTssService) blacklistDklsParty(vaultPublicKeyEcdsa, partyID string, cause error) {
+func (t *DKLSTssService) blacklistDKLSVault(vaultPublicKeyEcdsa string, cause error) {
 	if t.redis == nil {
 		return
 	}
-	if vaultPublicKeyEcdsa == "" || partyID == "" {
+	if vaultPublicKeyEcdsa == "" {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	key := common.DKLSPartyBlacklistKey(vaultPublicKeyEcdsa, partyID)
+	key := common.DKLSVaultBlacklistKey(vaultPublicKeyEcdsa)
 	value := time.Now().UTC().Format(time.RFC3339)
 	if err := t.redis.Set(ctx, key, value, 0); err != nil {
 		t.logger.WithFields(logrus.Fields{
 			"vault_public_key_ecdsa": vaultPublicKeyEcdsa,
-			"party_id":               partyID,
 			"redis_key":              key,
 			"cause":                  cause,
 			"error":                  err,
-		}).Error("failed to set dkls party blacklist key")
+		}).Error("failed to set dkls vault blacklist key")
 		return
 	}
 	// Log at warn level, as this is a security-related event.
 	t.logger.WithFields(logrus.Fields{
 		"vault_public_key_ecdsa": vaultPublicKeyEcdsa,
-		"party_id":               partyID,
 		"redis_key":              key,
 		"cause":                  cause,
-	}).Warn("dkls party blacklisted")
+	}).Warn("dkls vault blacklisted")
 }
