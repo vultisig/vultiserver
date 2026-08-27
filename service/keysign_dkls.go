@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,8 +27,6 @@ import (
 	"github.com/vultisig/vultiserver/relay"
 )
 
-var dklsAbortAndBanPartyRE = regexp.MustCompile(`LIB_ABORT_PROTOCOL_AND_BAN_PARTY_(\d+)`)
-
 type abortAndBanPartyError struct {
 	PartyIndex int
 	Cause      error
@@ -45,12 +42,19 @@ func parseDklsAbortAndBanParty(err error) (int, bool) {
 	if err == nil {
 		return 0, false
 	}
-	m := dklsAbortAndBanPartyRE.FindStringSubmatch(err.Error())
-	if len(m) != 2 {
+	// go-wrappers maps these lib errors to plain messages, e.g.
+	// "Protocol abort and ban party 1".
+	const prefix = "Protocol abort and ban party "
+	msg := err.Error()
+	if !strings.HasPrefix(msg, prefix) {
 		return 0, false
 	}
-	n, convErr := strconv.Atoi(m[1])
+	nStr := strings.TrimSpace(strings.TrimPrefix(msg, prefix))
+	n, convErr := strconv.Atoi(nStr)
 	if convErr != nil {
+		return 0, false
+	}
+	if n < 1 || n > 10 {
 		return 0, false
 	}
 	return n, true
@@ -110,8 +114,13 @@ func (t *DKLSTssService) ProcessDKLSKeysign(req types.KeysignRequest) (map[strin
 	}
 	// start to do keysign
 	for _, msg := range req.Messages {
-		sig, err := t.keysignWithRetry(req.SessionID, req.HexEncryptionKey, req.PublicKey, publicKey, !req.IsECDSA, msg, req.DerivePath, localPartyID, partiesJoined, req.Mldsa, mldsaSession.MlDsa44)
+		sig, err := t.keysignWithRetry(req.SessionID, req.HexEncryptionKey, publicKey, !req.IsECDSA, msg, req.DerivePath, localPartyID, partiesJoined, req.Mldsa, mldsaSession.MlDsa44)
 		if err != nil {
+			var banErr *abortAndBanPartyError
+			if errors.As(err, &banErr) {
+				// Best-effort: blacklist the whole vault (2/2).
+				t.blacklistDKLSVault(req.PublicKey, err)
+			}
 			return result, fmt.Errorf("failed to keysign: %w", err)
 		}
 		if sig == nil {
@@ -130,8 +139,7 @@ func (t *DKLSTssService) ProcessDKLSKeysign(req types.KeysignRequest) (map[strin
 }
 func (t *DKLSTssService) keysignWithRetry(sessionID string,
 	hexEncryptionKey string,
-	vaultPublicKeyEcdsa string,
-	keysharePublicKey string,
+	publicKey string,
 	isEdDSA bool,
 	message string,
 	derivePath string,
@@ -141,8 +149,7 @@ func (t *DKLSTssService) keysignWithRetry(sessionID string,
 	for i := range 3 {
 		keysignResult, err := t.keysign(sessionID,
 			hexEncryptionKey,
-			vaultPublicKeyEcdsa,
-			keysharePublicKey,
+			publicKey,
 			isEdDSA,
 			message,
 			derivePath,
@@ -156,7 +163,7 @@ func (t *DKLSTssService) keysignWithRetry(sessionID string,
 			}
 			t.logger.WithFields(logrus.Fields{
 				"session_id":        sessionID,
-				"public_key_ecdsa":  vaultPublicKeyEcdsa,
+				"public_key_ecdsa":  publicKey,
 				"message":           message,
 				"derive_path":       derivePath,
 				"local_party_id":    localPartyID,
@@ -174,8 +181,7 @@ func (t *DKLSTssService) keysignWithRetry(sessionID string,
 
 func (t *DKLSTssService) keysign(sessionID string,
 	hexEncryptionKey string,
-	vaultPublicKeyEcdsa string,
-	keysharePublicKey string,
+	publicKey string,
 	isEdDSA bool,
 	message string,
 	derivePath string,
@@ -183,7 +189,7 @@ func (t *DKLSTssService) keysign(sessionID string,
 	keysignCommittee []string,
 	attempt int,
 	isMldsa bool, level mldsaSession.SecurityLevel) (*tss.KeysignResponse, error) {
-	if vaultPublicKeyEcdsa == "" {
+	if publicKey == "" {
 		return nil, fmt.Errorf("public key is empty")
 	}
 	if message == "" {
@@ -201,18 +207,17 @@ func (t *DKLSTssService) keysign(sessionID string,
 	relayClient := relay.NewRelayClient(t.cfg.Relay.Server)
 	mpcWrapper := t.GetMPCKeygenWrapper(isEdDSA, isMldsa)
 	t.logger.WithFields(logrus.Fields{
-		"session_id":          sessionID,
-		"public_key_ecdsa":    vaultPublicKeyEcdsa,
-		"keyshare_public_key": keysharePublicKey,
-		"message":             message,
-		"derive_path":         derivePath,
-		"local_party_id":      localPartyID,
-		"keysign_committee":   keysignCommittee,
-		"attempt":             attempt,
+		"session_id":        sessionID,
+		"public_key_ecdsa":  publicKey,
+		"message":           message,
+		"derive_path":       derivePath,
+		"local_party_id":    localPartyID,
+		"keysign_committee": keysignCommittee,
+		"attempt":           attempt,
 	}).Info("Keysign")
 
 	// we need to get the shares
-	keyshare, err := t.localStateAccessor.GetLocalState(keysharePublicKey)
+	keyshare, err := t.localStateAccessor.GetLocalState(publicKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get keyshare: %w", err)
 	}
@@ -268,7 +273,7 @@ func (t *DKLSTssService) keysign(sessionID string,
 		t.logger.Error("failed to process keysign outbound", "error", err)
 	}
 
-	sig, err := t.processKeysignInbound(sessionHandle, sessionID, hexEncryptionKey, vaultPublicKeyEcdsa, localPartyID, isEdDSA, messageID, keysignCommittee, isMldsa)
+	sig, err := t.processKeysignInbound(sessionHandle, sessionID, hexEncryptionKey, localPartyID, isEdDSA, messageID, keysignCommittee, isMldsa)
 	if err != nil {
 		return nil, fmt.Errorf("failed to process keysign inbound: %w", err)
 	}
@@ -302,7 +307,7 @@ func (t *DKLSTssService) keysign(sessionID string,
 		DerSignature: hex.EncodeToString(derBytes),
 	}
 	if isEdDSA {
-		pubKeyBytes, err := hex.DecodeString(keysharePublicKey)
+		pubKeyBytes, err := hex.DecodeString(publicKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode public key: %w", err)
 		}
@@ -374,7 +379,6 @@ func (t *DKLSTssService) processKeysignOutbound(handle Handle,
 func (t *DKLSTssService) processKeysignInbound(handle Handle,
 	sessionID string,
 	hexEncryptionKey string,
-	vaultPublicKeyEcdsa string,
 	localPartyID string,
 	isEdDSA bool,
 	messageID string,
@@ -416,8 +420,6 @@ func (t *DKLSTssService) processKeysignInbound(handle Handle,
 			isFinished, err := mpcWrapper.SignSessionInputMessage(handle, rawBody)
 			if err != nil {
 				if partyIndex, ok := parseDklsAbortAndBanParty(err); ok {
-					// Best-effort blacklist in redis.
-					t.blacklistDKLSVault(vaultPublicKeyEcdsa, err)
 					return nil, &abortAndBanPartyError{PartyIndex: partyIndex, Cause: err}
 				}
 				t.logger.Error("fail to apply input message", "error", err)
