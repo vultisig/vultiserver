@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+
+	"github.com/vultisig/vultiserver/common"
 )
 
 type LibType int
@@ -39,6 +41,9 @@ func (req *VaultCreateRequest) IsValid() error {
 		return fmt.Errorf("session_id is required")
 	}
 	if _, err := uuid.Parse(req.SessionID); err != nil {
+		return fmt.Errorf("session_id is not valid")
+	}
+	if common.IsReservedRedisKeyPrefix(req.SessionID) {
 		return fmt.Errorf("session_id is not valid")
 	}
 
@@ -80,6 +85,9 @@ func (req *CreateMldsaRequest) IsValid() error {
 		return fmt.Errorf("session_id is required")
 	}
 	if _, err := uuid.Parse(req.SessionID); err != nil {
+		return fmt.Errorf("session_id is not valid")
+	}
+	if common.IsReservedRedisKeyPrefix(req.SessionID) {
 		return fmt.Errorf("session_id is not valid")
 	}
 	if req.HexEncryptionKey == "" {

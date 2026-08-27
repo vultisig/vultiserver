@@ -8,8 +8,10 @@ import (
 	"crypto/md5"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +26,39 @@ import (
 	"github.com/vultisig/vultiserver/internal/types"
 	"github.com/vultisig/vultiserver/relay"
 )
+
+type abortAndBanPartyError struct {
+	PartyIndex int
+	Cause      error
+}
+
+func (e *abortAndBanPartyError) Error() string {
+	return fmt.Sprintf("dkls abort protocol and ban party: idx=%d: %v", e.PartyIndex, e.Cause)
+}
+
+func (e *abortAndBanPartyError) Unwrap() error { return e.Cause }
+
+func parseDklsAbortAndBanParty(err error) (int, bool) {
+	if err == nil {
+		return 0, false
+	}
+	// go-wrappers maps these lib errors to plain messages, e.g.
+	// "Protocol abort and ban party 1".
+	const prefix = "Protocol abort and ban party "
+	msg := err.Error()
+	if !strings.HasPrefix(msg, prefix) {
+		return 0, false
+	}
+	nStr := strings.TrimSpace(strings.TrimPrefix(msg, prefix))
+	n, convErr := strconv.Atoi(nStr)
+	if convErr != nil {
+		return 0, false
+	}
+	if n < 1 || n > 10 {
+		return 0, false
+	}
+	return n, true
+}
 
 func (t *DKLSTssService) ProcessDKLSKeysign(req types.KeysignRequest) (map[string]tss.KeysignResponse, error) {
 	result := map[string]tss.KeysignResponse{}
@@ -81,6 +116,11 @@ func (t *DKLSTssService) ProcessDKLSKeysign(req types.KeysignRequest) (map[strin
 	for _, msg := range req.Messages {
 		sig, err := t.keysignWithRetry(req.SessionID, req.HexEncryptionKey, publicKey, !req.IsECDSA, msg, req.DerivePath, localPartyID, partiesJoined, req.Mldsa, mldsaSession.MlDsa44)
 		if err != nil {
+			var banErr *abortAndBanPartyError
+			if errors.As(err, &banErr) {
+				// Best-effort: blacklist the whole vault (2/2).
+				t.blacklistDKLSVault(req.PublicKey, err)
+			}
 			return result, fmt.Errorf("failed to keysign: %w", err)
 		}
 		if sig == nil {
@@ -116,6 +156,11 @@ func (t *DKLSTssService) keysignWithRetry(sessionID string,
 			localPartyID,
 			keysignCommittee, i, isMldsa, level)
 		if err != nil {
+			var banErr *abortAndBanPartyError
+			if errors.As(err, &banErr) {
+				// Do not retry: the DKLS library is explicitly telling us to abort and ban.
+				return nil, err
+			}
 			t.logger.WithFields(logrus.Fields{
 				"session_id":        sessionID,
 				"public_key_ecdsa":  publicKey,
@@ -374,6 +419,9 @@ func (t *DKLSTssService) processKeysignInbound(handle Handle,
 			t.logger.Infoln("Received message from", message.From)
 			isFinished, err := mpcWrapper.SignSessionInputMessage(handle, rawBody)
 			if err != nil {
+				if partyIndex, ok := parseDklsAbortAndBanParty(err); ok {
+					return nil, &abortAndBanPartyError{PartyIndex: partyIndex, Cause: err}
+				}
 				t.logger.Error("fail to apply input message", "error", err)
 				continue
 			}
@@ -389,6 +437,9 @@ func (t *DKLSTssService) processKeysignInbound(handle Handle,
 				t.logger.Infoln("keysign finished")
 				result, err := mpcWrapper.SignSessionFinish(handle)
 				if err != nil {
+					if partyIndex, ok := parseDklsAbortAndBanParty(err); ok {
+						return nil, &abortAndBanPartyError{PartyIndex: partyIndex, Cause: err}
+					}
 					t.logger.Error("fail to finish keysign", "error", err)
 					return nil, err
 				}
@@ -400,4 +451,32 @@ func (t *DKLSTssService) processKeysignInbound(handle Handle,
 		time.Sleep(100 * time.Millisecond)
 	}
 
+}
+
+func (t *DKLSTssService) blacklistDKLSVault(vaultPublicKeyEcdsa string, cause error) {
+	if t.redis == nil {
+		return
+	}
+	if vaultPublicKeyEcdsa == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	key := common.DKLSVaultBlacklistKey(vaultPublicKeyEcdsa)
+	value := time.Now().UTC().Format(time.RFC3339)
+	if err := t.redis.Set(ctx, key, value, 0); err != nil {
+		t.logger.WithFields(logrus.Fields{
+			"vault_public_key_ecdsa": vaultPublicKeyEcdsa,
+			"redis_key":              key,
+			"cause":                  cause,
+			"error":                  err,
+		}).Error("failed to set dkls vault blacklist key")
+		return
+	}
+	// Log at warn level, as this is a security-related event.
+	t.logger.WithFields(logrus.Fields{
+		"vault_public_key_ecdsa": vaultPublicKeyEcdsa,
+		"redis_key":              key,
+		"cause":                  cause,
+	}).Warn("dkls vault blacklisted")
 }

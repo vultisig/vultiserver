@@ -431,7 +431,7 @@ func (s *WorkerService) HandleReshareDKLS(ctx context.Context, t *asynq.Task) er
 		}
 		// create new vault
 	}
-	service, err := NewDKLSTssService(s.cfg, s.blockStorage, localState, s)
+	service, err := NewDKLSTssService(s.cfg, s.blockStorage, localState, s, s.redis)
 	if err != nil {
 		s.logger.Errorf("NewDKLSTssService failed: %v", err)
 		return fmt.Errorf("NewDKLSTssService failed: %v: %w", err, asynq.SkipRetry)
@@ -477,7 +477,7 @@ func (s *WorkerService) HandleMigrateDKLS(ctx context.Context, t *asynq.Task) er
 		return fmt.Errorf("vault doesn't exist , fail to migrate: %w", asynq.SkipRetry)
 	}
 
-	service, err := NewDKLSTssService(s.cfg, s.blockStorage, localState, s)
+	service, err := NewDKLSTssService(s.cfg, s.blockStorage, localState, s, s.redis)
 	if err != nil {
 		s.logger.Errorf("NewDKLSTssService failed: %v", err)
 		return fmt.Errorf("NewDKLSTssService failed: %v: %w", err, asynq.SkipRetry)

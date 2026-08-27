@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+
+	"github.com/vultisig/vultiserver/common"
 )
 
 type ReshareType int
@@ -50,6 +52,9 @@ func (req *BatchReshareRequest) IsValid() error {
 	if _, err := uuid.Parse(req.SessionID); err != nil {
 		return fmt.Errorf("session_id is not valid")
 	}
+	if common.IsReservedRedisKeyPrefix(req.SessionID) {
+		return fmt.Errorf("session_id is not valid")
+	}
 	if req.HexEncryptionKey == "" {
 		return fmt.Errorf("hex_encryption_key is required")
 	}
@@ -83,6 +88,9 @@ func (req *ReshareRequest) IsValid() error {
 		return fmt.Errorf("session_id is required")
 	}
 	if _, err := uuid.Parse(req.SessionID); err != nil {
+		return fmt.Errorf("session_id is not valid")
+	}
+	if common.IsReservedRedisKeyPrefix(req.SessionID) {
 		return fmt.Errorf("session_id is not valid")
 	}
 	if req.HexEncryptionKey == "" {
