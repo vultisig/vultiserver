@@ -437,6 +437,9 @@ func (t *DKLSTssService) processKeysignInbound(handle Handle,
 				t.logger.Infoln("keysign finished")
 				result, err := mpcWrapper.SignSessionFinish(handle)
 				if err != nil {
+					if partyIndex, ok := parseDklsAbortAndBanParty(err); ok {
+						return nil, &abortAndBanPartyError{PartyIndex: partyIndex, Cause: err}
+					}
 					t.logger.Error("fail to finish keysign", "error", err)
 					return nil, err
 				}
