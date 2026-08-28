@@ -12,7 +12,10 @@ VultiServer consists of two components:
 
 ## Production Base URL
 
-Cloudlfare managed Base URL: https:api.vultisig.com/router
+Cloudflare managed Base URL (this server): https:api.vultisig.com/vault
+Relay server (for coordinating MPC): https:api.vultisig.com/router
+https://github.com/vultisig/vultisig-relay
+
 
 
 ## Ping
